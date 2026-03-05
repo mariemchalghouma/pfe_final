@@ -1,3 +1,5 @@
+"use client";
+
 import { useState, useRef, useEffect, useCallback } from 'react';
 import Sidebar, { SidebarContext } from './Sidebar';
 import MapView from '../map/MapView';
