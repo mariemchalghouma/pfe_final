@@ -1,8 +1,8 @@
 'use client';
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { FiSearch, FiMapPin, FiArrowLeft, FiBarChart2, FiList, FiCalendar, FiClock, FiUser } from 'react-icons/fi';
-import { FaGasPump, FaTachometerAlt, FaThermometerHalf, FaRoad } from 'react-icons/fa';
+import { FiSearch, FiMapPin, FiArrowLeft, FiBarChart2, FiList, FiCalendar, FiClock, FiUser, FiTruck } from 'react-icons/fi';
+import { FaGasPump, FaTachometerAlt, FaThermometerHalf, FaRoad, FaWarehouse, FaUserTie, FaParking, FaExclamationTriangle } from 'react-icons/fa';
 import { camionsAPI } from '@/services/api';
 import { useMapContext } from '@/context/MapContext';
 import { reverseGeocode } from '@/services/geocoding';
@@ -44,24 +44,16 @@ const getStatusIcon = (status) => {
 
 /* ═══ Gantt helpers ═══ */
 const segmentColors = {
-    driving:    { bg: '#22c55e', label: 'En route',         text: 'white' },
-    stop:       { bg: '#f59e0b', label: 'Arrêt conforme',   text: 'white' },
-    stop_long:  { bg: '#f87171', label: 'Non conforme',     text: 'white' },
-    client:     { bg: '#8b5cf6', label: 'Client',           text: 'white' },
-    depot:      { bg: '#06b6d4', label: 'Dépôt',            text: 'white' },
-    inactive:   { bg: '#cbd5e1', label: 'Inactif',          text: '#64748b' },
+    driving:        { bg: '#22c55e', label: 'En route',         text: 'white',   icon: FiTruck },
+    stop:           { bg: '#f59e0b', label: 'Arrêt',            text: 'white',   icon: FaParking },
+    stop_long:      { bg: '#ef4444', label: 'Non conforme',     text: 'white',   icon: FaExclamationTriangle },
+    client:         { bg: '#8b5cf6', label: 'Client',           text: 'white',   icon: FaUserTie },
+    depot:          { bg: '#06b6d4', label: 'Dépôt',            text: 'white',   icon: FaWarehouse },
+    ravitaillement: { bg: '#f97316', label: 'Ravitaillement',   text: 'white',   icon: FaGasPump },
+    inactive:       { bg: '#cbd5e1', label: 'Inactif',          text: '#64748b', icon: null },
 };
 
-const typeColorMap = { 'Semi': '#ef4444', 'Cargo': '#3b82f6', 'Frigorifique': '#22c55e' };
-const vehicleTypeMap = { 'NGI': 'Frigorifique', 'TDS': 'Cargo' };
-const getVehicleType = (camion) => {
-    if (!camion) return 'Cargo';
-    const upper = camion.toUpperCase();
-    for (const [prefix, type] of Object.entries(vehicleTypeMap)) {
-        if (upper.includes(prefix)) return type;
-    }
-    return 'Semi';
-};
+
 
 const fmtTime = (iso) => {
     if (!iso) return '';
@@ -86,23 +78,47 @@ const GanttBar = ({ data, hoveredSegment, setHoveredSegment, onClickCamion }) =>
         return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
     }, [data.segments]);
     const dayMs = 24 * 60 * 60 * 1000;
-    const vType = getVehicleType(data.camion);
-    const vColor = typeColorMap[vType] || '#3b82f6';
 
     return (
-        <div className="flex items-center gap-0 cursor-pointer" onClick={() => onClickCamion?.(data.camion)}>
-            {/* Camion label — left column */}
-            <div className="w-[150px] flex-shrink-0 pr-3 py-2 border-r border-gray-100">
-                <div className="font-extrabold text-[15px] text-gray-800 leading-tight">{data.camion}</div>
-                <div className="flex items-center gap-1 text-xs text-gray-500 mt-0.5">
-                    <FiUser className="text-gray-400 text-[10px]" />
-                    <span>{(data.chauffeur || '—').split(' ')[0]}</span>
+        <div className="flex items-stretch gap-0 cursor-pointer" onClick={() => onClickCamion?.(data.camion)}>
+            {/* Left column — camion + chauffeur + clients list */}
+            <div className="w-[260px] flex-shrink-0 pr-3 py-2 border-r border-gray-100 pl-2">
+                {/* Camion + Voyage */}
+                <div className="flex items-center gap-1.5">
+                    <FiTruck className="text-orange-500 text-[12px] flex-shrink-0" />
+                    <span className="font-extrabold text-[13px] text-gray-800 leading-tight">{data.camion}</span>
+                    <span className="px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700 text-[9px] font-bold">V{data.voycle}</span>
                 </div>
-                <div className="text-xs font-bold mt-0.5" style={{ color: vColor }}>{vType}</div>
+                {/* Chauffeur */}
+                <div className="flex items-center gap-1 text-xs text-gray-500 mt-0.5">
+                    <FiUser className="text-gray-400 text-[10px] flex-shrink-0" />
+                    <span className="truncate">{data.chauffeur || '—'}</span>
+                    {data.heureDep && (
+                        <span className="text-[9px] text-blue-400 ml-auto">{data.heureDep}{data.heureFin ? ` → ${data.heureFin}` : ''}</span>
+                    )}
+                </div>
+                {/* Clients list */}
+                <div className="mt-1 space-y-0.5">
+                    {(data.clients || []).map((c, ci) => (
+                        <div key={ci} className="flex items-center gap-1">
+                            <span className="w-4 h-4 rounded-full bg-purple-100 text-purple-700 text-[8px] font-bold flex items-center justify-center flex-shrink-0">
+                                {c.ordre || ci + 1}
+                            </span>
+                            <FaUserTie className="text-purple-400 text-[8px] flex-shrink-0" />
+                            <span className="text-[11px] font-medium text-gray-700 truncate" title={c.client}>{c.client}</span>
+                            {c.code && c.code !== '—' && (
+                                <span className="text-[8px] text-gray-400 font-mono">{c.code}</span>
+                            )}
+                            {c.region && c.region !== '—' && (
+                                <span className="text-[8px] text-orange-400 truncate">{c.region}</span>
+                            )}
+                        </div>
+                    ))}
+                </div>
             </div>
 
             {/* Bar */}
-            <div className="flex-1 h-[42px] bg-[#d1dce8] rounded-md relative overflow-hidden mx-1">
+            <div className="flex-1 h-[42px] bg-[#d1dce8] rounded-md relative overflow-hidden mx-1 self-center">
                 {data.hasData && data.segments?.map((seg, i) => {
                     const start = new Date(seg.start).getTime();
                     const end = new Date(seg.end).getTime();
@@ -113,9 +129,12 @@ const GanttBar = ({ data, hoveredSegment, setHoveredSegment, onClickCamion }) =>
                     const duration = fmtDuration(seg.start, seg.end);
                     const showLabel = widthPct > 3;
 
+                    const SegIcon = segColor.icon;
+                    const showIcon = widthPct > 2 && SegIcon && seg.type !== 'driving';
+
                     return (
                         <div key={i}
-                            className="absolute top-0 h-full flex items-center justify-center transition-all duration-100 group/seg"
+                            className="absolute top-0 h-full flex items-center justify-center gap-0.5 transition-all duration-100 group/seg"
                             style={{
                                 left: `${Math.max(0, Math.min(100, leftPct))}%`,
                                 width: `${Math.min(widthPct, 100 - Math.max(0, leftPct))}%`,
@@ -126,18 +145,21 @@ const GanttBar = ({ data, hoveredSegment, setHoveredSegment, onClickCamion }) =>
                             onMouseEnter={() => setHoveredSegment(`${data.camion}-${i}`)}
                             onMouseLeave={() => setHoveredSegment(null)}
                         >
+                            {showIcon && <SegIcon className="text-[11px] drop-shadow-sm" style={{ color: segColor.text || 'white' }} />}
                             {showLabel && (
-                                <span className="text-[11px] font-bold drop-shadow-sm select-none" style={{ color: segColor.text || 'white' }}>
+                                <span className="text-[10px] font-bold drop-shadow-sm select-none" style={{ color: segColor.text || 'white' }}>
                                     {duration}
                                 </span>
                             )}
 
                             {/* Hover tooltip */}
                             {isHovered && (
-                                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 z-50 bg-white rounded-xl shadow-xl border border-gray-200 px-4 py-3 text-left min-w-[220px] pointer-events-none"
+                                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 z-50 bg-white rounded-xl shadow-xl border border-gray-200 px-4 py-3 text-left min-w-[240px] pointer-events-none"
                                     style={{ whiteSpace: 'nowrap' }}>
                                     <div className="flex items-center gap-2 mb-1">
-                                        <span className="w-3 h-3 rounded-sm flex-shrink-0" style={{ background: segColor.bg }} />
+                                        <span className="w-3.5 h-3.5 rounded-sm flex-shrink-0 flex items-center justify-center" style={{ background: segColor.bg }}>
+                                            {SegIcon && <SegIcon className="text-[9px] text-white" />}
+                                        </span>
                                         <span className="font-bold text-gray-700 text-sm">{segColor.label}</span>
                                     </div>
                                     <p className="text-gray-500 text-xs">{data.camion} · {data.chauffeur}</p>
@@ -145,6 +167,17 @@ const GanttBar = ({ data, hoveredSegment, setHoveredSegment, onClickCamion }) =>
                                         <FiClock className="text-gray-400" />
                                         {fmtTime(seg.start)} → {fmtTime(seg.end)} ({duration})
                                     </p>
+                                    {seg.duration > 0 && seg.type !== 'driving' && seg.type !== 'inactive' && (
+                                        <p className="text-gray-600 text-xs mt-1 font-semibold">⏱ Durée arrêt : {seg.duration >= 60 ? `${Math.floor(seg.duration/60)}h${seg.duration%60 > 0 ? String(seg.duration%60).padStart(2,'0') : ''}` : `${seg.duration}min`}</p>
+                                    )}
+                                    {seg.poiName && (
+                                        <p className="text-indigo-600 text-xs mt-1 font-semibold">📌 {seg.poiName}{seg.distance != null ? ` (${seg.distance}m)` : ''}</p>
+                                    )}
+                                    {seg.conforme != null && seg.type !== 'driving' && seg.type !== 'inactive' && (
+                                        <p className={`text-xs mt-0.5 font-bold ${seg.conforme ? 'text-green-600' : 'text-red-500'}`}>
+                                            {seg.conforme ? '✅ Conforme' : '⚠️ Non conforme'}
+                                        </p>
+                                    )}
                                     {seg.address && seg.address !== '—' && (
                                         <p className="text-gray-400 text-[10px] mt-1">📍 {seg.address}</p>
                                     )}
@@ -248,18 +281,28 @@ const Camions = () => {
         if (viewMode === 'gantt') loadGantt(ganttDate);
     }, [viewMode, ganttDate, loadGantt]);
 
+    // Group gantt data by voyage (PLAMOTI + VOYCLE) — no longer needed, controller already groups
     const filteredGantt = useMemo(() => {
         const q = ganttSearch.toLowerCase().trim();
         if (!q) return ganttData;
         return ganttData.filter(d =>
-            d.camion?.toLowerCase().includes(q) || d.chauffeur?.toLowerCase().includes(q)
+            d.camion?.toLowerCase().includes(q) ||
+            d.chauffeur?.toLowerCase().includes(q) ||
+            String(d.voycle || '').includes(q) ||
+            d.clients?.some(c => c.client?.toLowerCase().includes(q) || c.code?.toLowerCase().includes(q) || c.region?.toLowerCase().includes(q))
         );
     }, [ganttData, ganttSearch]);
 
     const ganttStats = useMemo(() => {
+        const uniqueCamions = new Set(ganttData.map(d => d.camion));
+        const totalClients = ganttData.reduce((s, d) => s + (d.nbClients || 0), 0);
         const active = ganttData.filter(d => d.hasData);
-        const avgMoving = active.length > 0 ? Math.round(active.reduce((s, d) => s + (d.movingPct || 0), 0) / active.length) : 0;
-        return { total: ganttData.length, active: active.length, inactive: ganttData.length - active.length, avgMoving };
+        return {
+            totalClients,
+            totalVoyages: ganttData.length,
+            totalCamions: uniqueCamions.size,
+            activeCamions: active.length,
+        };
     }, [ganttData]);
 
     const loadTrajet = useCallback(async (plaque) => {
@@ -379,15 +422,18 @@ const Camions = () => {
                             <div className="relative flex-1 max-w-xs">
                                 <FiSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
                                 <input type="text" value={ganttSearch} onChange={e => setGanttSearch(e.target.value)}
-                                    placeholder="Rechercher camion..."
+                                    placeholder="Rechercher camion, chauffeur, client..."
                                     className="w-full pl-10 pr-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-orange-500" />
                             </div>
                             <div className="flex items-center gap-2 ml-auto">
-                                <span className="px-3 py-1 rounded-full bg-green-50 text-green-700 text-xs font-bold border border-green-200">
-                                    {ganttStats.active} actifs
+                                <span className="px-3 py-1 rounded-full bg-blue-50 text-blue-700 text-xs font-bold border border-blue-200">
+                                    {ganttStats.totalVoyages} trajet{ganttStats.totalVoyages > 1 ? 's' : ''}
                                 </span>
-                                <span className="px-3 py-1 rounded-full bg-gray-50 text-gray-500 text-xs font-bold border border-gray-200">
-                                    {ganttStats.inactive} inactifs
+                                <span className="px-3 py-1 rounded-full bg-purple-50 text-purple-700 text-xs font-bold border border-purple-200">
+                                    {ganttStats.totalClients} client{ganttStats.totalClients > 1 ? 's' : ''}
+                                </span>
+                                <span className="px-3 py-1 rounded-full bg-green-50 text-green-700 text-xs font-bold border border-green-200">
+                                    {ganttStats.totalCamions} camion{ganttStats.totalCamions > 1 ? 's' : ''}
                                 </span>
                             </div>
                         </div>
@@ -400,7 +446,7 @@ const Camions = () => {
                             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
                                 {/* Time axis header */}
                                 <div className="flex items-center border-b border-gray-200 bg-gray-50">
-                                    <div className="w-[150px] flex-shrink-0 px-3 py-2 text-[11px] font-bold text-gray-500 uppercase tracking-wider border-r border-gray-100">CAMION</div>
+                                    <div className="w-[260px] flex-shrink-0 px-3 py-2 text-[11px] font-bold text-gray-500 uppercase tracking-wider border-r border-gray-100">TRAJET / CLIENTS</div>
                                     <div className="flex-1 relative h-8 mx-1">
                                         {hours.map(h => (
                                             <div key={h} className="absolute top-0 h-full"
@@ -414,10 +460,10 @@ const Camions = () => {
                                     </div>
                                 </div>
 
-                                {/* Rows */}
+                                {/* Rows — one per voyage */}
                                 <div className="divide-y divide-gray-100">
                                     {filteredGantt.map((d, i) => (
-                                        <div key={d.camion || i} className="px-2 py-1 hover:bg-orange-50/20 transition-colors relative">
+                                        <div key={d.id || `${d.camion}-${d.voycle}-${i}`} className="px-2 py-1 hover:bg-orange-50/20 transition-colors relative">
                                             <GanttBar data={d} hoveredSegment={hoveredSegment} setHoveredSegment={setHoveredSegment}
                                                 onClickCamion={(plaque) => {
                                                     const cam = camions.find(c => c.plaque === plaque);

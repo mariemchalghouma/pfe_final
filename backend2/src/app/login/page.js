@@ -27,6 +27,9 @@ const Login = () => {
 
         try {
             await login(formData.email, formData.password);
+            if (typeof window !== 'undefined') {
+                sessionStorage.setItem('loginSuccess', '1');
+            }
             router.push('/dashboard');
         } catch (err) {
             setError(err.message || 'Email ou mot de passe invalide');

@@ -10,6 +10,7 @@ const Dashboard = () => {
     const [loading, setLoading] = useState(true);
     const [isMapOpen, setIsMapOpen] = useState(false);
     const [mapPositions, setMapPositions] = useState([]);
+    const [showLoginSuccess, setShowLoginSuccess] = useState(false);
 
     useEffect(() => {
         const loadCamions = async () => {
@@ -40,6 +41,22 @@ const Dashboard = () => {
         loadCamions();
     }, []);
 
+    useEffect(() => {
+        if (typeof window === 'undefined') return;
+
+        const hasLoginSuccess = sessionStorage.getItem('loginSuccess') === '1';
+        if (!hasLoginSuccess) return;
+
+        setShowLoginSuccess(true);
+        sessionStorage.removeItem('loginSuccess');
+
+        const timer = setTimeout(() => {
+            setShowLoginSuccess(false);
+        }, 3000);
+
+        return () => clearTimeout(timer);
+    }, []);
+
     return (
         <>
             <div className="p-8 max-w-7xl mx-auto">
@@ -56,6 +73,15 @@ const Dashboard = () => {
                         Suivi en temps réel
                     </button>
                 </div>
+
+                {showLoginSuccess && (
+                    <div className="fixed top-6 right-6 z-50 p-4 bg-emerald-50 border border-emerald-200 text-emerald-700 rounded-xl text-sm flex items-center gap-2 shadow-lg">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="m4.5 12.75 6 6 9-13.5" />
+                        </svg>
+                        Alerte: connexion reussie.
+                    </div>
+                )}
 
                 {/* Stats Cards */}
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">

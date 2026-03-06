@@ -3,7 +3,7 @@ import pool from '../config/database.js';
 /**
  * Calcule la distance entre deux points GPS en mètres (Formule Haversine)
  */
-const calculateDistance = (lat1, lon1, lat2, lon2) => {
+export const calculateDistance = (lat1, lon1, lat2, lon2) => {
   if (!lat1 || !lon1 || !lat2 || !lon2) return Infinity;
 
   const R = 6371000;

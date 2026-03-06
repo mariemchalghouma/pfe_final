@@ -88,8 +88,8 @@ export const arretsAPI = {
 
 // Carburant API
 export const carburantAPI = {
-    getEcarts: () => fetchWithAuth('/api/carburant'),
-    getEcartsByCamion: (camion) => fetchWithAuth(`/api/carburant/${encodeURIComponent(camion)}`),
+    getEcarts: (params = {}) => fetchWithAuth(`/api/carburant${buildQueryString(params)}`),
+    getEcartsByCamion: (camion, params = {}) => fetchWithAuth(`/api/carburant/${encodeURIComponent(camion)}${buildQueryString(params)}`),
     getNiveau: (camion, params = {}) => fetchWithAuth(`/api/carburant/${encodeURIComponent(camion)}/niveau${buildQueryString(params)}`),
 };
 
