@@ -3,28 +3,28 @@ const API_URL = import.meta.env.VITE_API_URL || '/api';
 // Fetch wrapper with token management
 const fetchWithAuth = async (url, options = {}) => {
     const token = localStorage.getItem('token');
-    
+
     const headers = {
         'Content-Type': 'application/json',
         ...options.headers,
     };
-    
+
     if (token) {
         headers.Authorization = `Bearer ${token}`;
     }
-    
+
     const config = {
         ...options,
         headers,
     };
-    
+
     const response = await fetch(`${API_URL}${url}`, config);
-    
+
     if (!response.ok) {
         const error = await response.json().catch(() => ({ message: 'An error occurred' }));
         throw new Error(error.message || `HTTP error! status: ${response.status}`);
     }
-    
+
     return response.json();
 };
 
@@ -59,8 +59,8 @@ export const camionsAPI = {
 // Ouvertures API
 export const ouverturesAPI = {
     getOuvertures: (params) => fetchWithAuth(`/ouvertures${buildQueryString(params)}`),
-    
-     
+
+
     getCamionsWithOuvertures: () => fetchWithAuth('/ouvertures/camions'),
 };
 
@@ -86,5 +86,22 @@ export const arretsAPI = {
     getArrets: () => fetchWithAuth('/arrets'),
 };
 
-export default { authAPI, camionsAPI, ouverturesAPI, poiAPI, arretsAPI };
+// User API
+export const userAPI = {
+    getUsers: () => fetchWithAuth('/users'),
+    getUser: (id) => fetchWithAuth(`/users/${id}`),
+    createUser: (data) => fetchWithAuth('/users', {
+        method: 'POST',
+        body: JSON.stringify(data),
+    }),
+    updateUser: (id, data) => fetchWithAuth(`/users/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify(data),
+    }),
+    deleteUser: (id) => fetchWithAuth(`/users/${id}`, {
+        method: 'DELETE',
+    }),
+};
+
+export default { authAPI, camionsAPI, ouverturesAPI, poiAPI, arretsAPI, userAPI };
 

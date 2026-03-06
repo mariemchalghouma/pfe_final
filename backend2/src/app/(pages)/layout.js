@@ -13,7 +13,7 @@ const DashboardContent = ({ children }) => {
             <Sidebar />
             <main
                 className="flex-1 overflow-y-auto transition-all duration-300"
-                style={{ marginLeft: isCollapsed ? '80px' : '260px' }}
+                style={{ marginLeft: isCollapsed ? '68px' : '220px' }}
             >
                 {children}
             </main>

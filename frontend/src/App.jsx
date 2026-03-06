@@ -9,6 +9,7 @@ import Arrets from './pages/Arrets';
 import GestionPoi from './pages/GestionPoi';
 import './index.css';
 import OuverturePorte from './pages/OuverturePorte';
+import Administration from './pages/Administration';
 
 function App() {
     return (
@@ -54,6 +55,14 @@ function App() {
                             element={
                                 <PrivateRoute>
                                     <GestionPoi />
+                                </PrivateRoute>
+                            }
+                        />
+                        <Route
+                            path="/administration"
+                            element={
+                                <PrivateRoute>
+                                    <Administration />
                                 </PrivateRoute>
                             }
                         />

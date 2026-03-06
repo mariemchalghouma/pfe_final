@@ -213,7 +213,7 @@ const GestionPoi = () => {
 
     return (
         <>
-            <div className="p-8 max-w-[1240px] mx-auto min-h-screen bg-gray-50/30">
+            <div className="p-4 px-6 max-w-[1600px] mx-auto min-h-screen bg-gray-50/30">
                 {/* Header */}
                 <div className="mb-6 flex flex-wrap items-center justify-between gap-6 bg-white p-6 rounded-2xl border border-gray-100 shadow-sm">
                     <div className="flex flex-wrap items-center gap-4">

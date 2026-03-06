@@ -109,4 +109,21 @@ export const carburantAPI = {
     getNiveau: (camion, params = {}) => fetchWithAuth(`/api/carburant/${encodeURIComponent(camion)}/niveau${buildQueryString(params)}`),
 };
 
-export default { authAPI, camionsAPI, ouverturesAPI, poiAPI, arretsAPI, carburantAPI, groupsAPI };
+// User API
+export const userAPI = {
+    getUsers: () => fetchWithAuth('/api/users'),
+    getUser: (id) => fetchWithAuth(`/api/users/${id}`),
+    createUser: (data) => fetchWithAuth('/api/users', {
+        method: 'POST',
+        body: JSON.stringify(data),
+    }),
+    updateUser: (id, data) => fetchWithAuth(`/api/users/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify(data),
+    }),
+    deleteUser: (id) => fetchWithAuth(`/api/users/${id}`, {
+        method: 'DELETE',
+    }),
+};
+
+export default { authAPI, camionsAPI, ouverturesAPI, poiAPI, arretsAPI, carburantAPI, groupsAPI, userAPI };
