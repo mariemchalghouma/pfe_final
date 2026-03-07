@@ -18,7 +18,7 @@ const hasRayonColumn = async () => {
 
 export const getPOIs = async () => {
   try {
-    const result = await pool.query('SELECT * FROM poi ORDER BY nom ASC');
+    const result = await pool.query('SELECT * FROM poi ORDER BY code ASC');
     return Response.json({ success: true, data: result.rows });
   } catch (error) {
     console.error('Error getPOIs:', error);
@@ -52,24 +52,24 @@ export const getPOIHistory = async () => {
 
 export const createPOI = async (request) => {
   try {
-    const { nom, groupe, type, lat, lng, adresse, rayon } = await request.json();
+    const { code, groupe, type, lat, lng, description, rayon } = await request.json();
     const canSaveRayon = await hasRayonColumn();
 
     const result = canSaveRayon
       ? await pool.query(
-          'INSERT INTO poi (nom, groupe, type, lat, lng, adresse, rayon) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *',
-          [nom, groupe, type || 'Point', lat, lng, adresse, rayon]
-        )
+        'INSERT INTO poi (code, groupe, type, lat, lng, description, rayon) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *',
+        [code, groupe, type || 'Point', lat, lng, description, rayon]
+      )
       : await pool.query(
-          'INSERT INTO poi (nom, groupe, type, lat, lng, adresse) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *',
-          [nom, groupe, type || 'Point', lat, lng, adresse]
-        );
+        'INSERT INTO poi (code, groupe, type, lat, lng, description) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *',
+        [code, groupe, type || 'Point', lat, lng, description]
+      );
 
     const newPoi = result.rows[0];
 
     await pool.query(
-      'INSERT INTO poi_historique (poi_id, poi_nom, action, details) VALUES ($1, $2, $3, $4)',
-      [newPoi.id, newPoi.nom, 'CREATE', `Nouveau POI créé : ${newPoi.nom} (${newPoi.groupe})`]
+      'INSERT INTO poi_historique (poi_id, poi_code, action, details) VALUES ($1, $2, $3, $4)',
+      [newPoi.id, newPoi.code, 'CREATE', `Nouveau POI créé : ${newPoi.code} (${newPoi.groupe})`]
     );
 
     return Response.json({ success: true, data: newPoi }, { status: 201 });
@@ -88,7 +88,7 @@ export const createPOI = async (request) => {
 
 export const updatePOI = async (id, request) => {
   try {
-    const { nom, groupe, type, lat, lng, adresse, rayon } = await request.json();
+    const { code, groupe, type, lat, lng, description, rayon } = await request.json();
     const canSaveRayon = await hasRayonColumn();
 
     const oldDataResult = await pool.query('SELECT * FROM poi WHERE id = $1', [id]);
@@ -100,21 +100,21 @@ export const updatePOI = async (id, request) => {
 
     const result = canSaveRayon
       ? await pool.query(
-          'UPDATE poi SET nom = $1, groupe = $2, type = $3, lat = $4, lng = $5, adresse = $6, rayon = $7 WHERE id = $8 RETURNING *',
-          [nom, groupe, type, lat, lng, adresse, rayon, id]
-        )
+        'UPDATE poi SET code = $1, groupe = $2, type = $3, lat = $4, lng = $5, description = $6, rayon = $7 WHERE id = $8 RETURNING *',
+        [code, groupe, type, lat, lng, description, rayon, id]
+      )
       : await pool.query(
-          'UPDATE poi SET nom = $1, groupe = $2, type = $3, lat = $4, lng = $5, adresse = $6 WHERE id = $7 RETURNING *',
-          [nom, groupe, type, lat, lng, adresse, id]
-        );
+        'UPDATE poi SET code = $1, groupe = $2, type = $3, lat = $4, lng = $5, description = $6 WHERE id = $7 RETURNING *',
+        [code, groupe, type, lat, lng, description, id]
+      );
 
     const updatedPoi = result.rows[0];
 
     const changes = [];
-    if (oldPoi.nom !== updatedPoi.nom) changes.push(`Nom: ${oldPoi.nom} -> ${updatedPoi.nom}`);
+    if (oldPoi.code !== updatedPoi.code) changes.push(`Code: ${oldPoi.code} -> ${updatedPoi.code}`);
     if (oldPoi.groupe !== updatedPoi.groupe)
       changes.push(`Groupe: ${oldPoi.groupe} -> ${updatedPoi.groupe}`);
-    if (oldPoi.adresse !== updatedPoi.adresse) changes.push('Adresse modifiée');
+    if (oldPoi.description !== updatedPoi.description) changes.push('Description modifiée');
     if (oldPoi.lat !== updatedPoi.lat || oldPoi.lng !== updatedPoi.lng) {
       changes.push(`Coords: (${oldPoi.lat}, ${oldPoi.lng}) -> (${updatedPoi.lat}, ${updatedPoi.lng})`);
     }
@@ -123,8 +123,8 @@ export const updatePOI = async (id, request) => {
     }
 
     await pool.query(
-      'INSERT INTO poi_historique (poi_id, poi_nom, action, details) VALUES ($1, $2, $3, $4)',
-      [id, updatedPoi.nom, 'UPDATE', changes.length > 0 ? changes.join(', ') : 'Modification générale']
+      'INSERT INTO poi_historique (poi_id, poi_code, action, details) VALUES ($1, $2, $3, $4)',
+      [id, updatedPoi.code, 'UPDATE', changes.length > 0 ? changes.join(', ') : 'Modification générale']
     );
 
     return Response.json({ success: true, data: updatedPoi });
@@ -143,18 +143,18 @@ export const updatePOI = async (id, request) => {
 
 export const deletePOI = async (id) => {
   try {
-    const poiResult = await pool.query('SELECT nom FROM poi WHERE id = $1', [id]);
+    const poiResult = await pool.query('SELECT code FROM poi WHERE id = $1', [id]);
     if (poiResult.rows.length === 0) {
       return Response.json({ success: false, message: 'POI non trouvé' }, { status: 404 });
     }
 
-    const poiNom = poiResult.rows[0].nom;
+    const poiCode = poiResult.rows[0].code;
 
     await pool.query('DELETE FROM poi WHERE id = $1 RETURNING id', [id]);
 
     await pool.query(
-      'INSERT INTO poi_historique (poi_id, poi_nom, action, details) VALUES ($1, $2, $3, $4)',
-      [id, poiNom, 'DELETE', `POI supprimé : ${poiNom}`]
+      'INSERT INTO poi_historique (poi_id, poi_code, action, details) VALUES ($1, $2, $3, $4)',
+      [id, poiCode, 'DELETE', `POI supprimé : ${poiCode}`]
     );
 
     return Response.json({ success: true, message: 'POI supprimé avec succès' });

@@ -12,7 +12,7 @@ export const calculateDistance = (lat1, lon1, lat2, lon2) => {
   const a =
     Math.sin(dLat / 2) * Math.sin(dLat / 2) +
     Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) *
-      Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    Math.sin(dLon / 2) * Math.sin(dLon / 2);
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 
   return R * c;
@@ -26,7 +26,7 @@ export const calculateDistance = (lat1, lon1, lat2, lon2) => {
  */
 export const getStops = async () => {
   try {
-    const poiResult = await pool.query('SELECT nom, lat, lng FROM poi');
+    const poiResult = await pool.query('SELECT code, lat, lng FROM poi');
     const pois = poiResult.rows;
 
     const query = `
@@ -50,21 +50,22 @@ export const getStops = async () => {
 
     const result = await pool.query(query);
 
-    const formattedData = result.rows.map((row, index) => {
+    const arrets = result.rows.map((row, index) => {
       const refLat = row.avg_lat ? parseFloat(row.avg_lat) : parseFloat(row.lat);
       const refLng = row.avg_lng ? parseFloat(row.avg_lng) : parseFloat(row.lng);
 
       let minDistance = Infinity;
       let nearestPoi = null;
 
-      pois.forEach((poi) => {
-        const dist = calculateDistance(refLat, refLng, parseFloat(poi.lat), parseFloat(poi.lng));
-        if (dist < minDistance) {
-          minDistance = dist;
-          nearestPoi = poi.nom;
-        }
-      });
-
+      if (refLat && refLng) {
+        pois.forEach((poi) => {
+          const dist = calculateDistance(refLat, refLng, parseFloat(poi.lat), parseFloat(poi.lng));
+          if (dist < minDistance) {
+            minDistance = dist;
+            nearestPoi = poi.code;
+          }
+        });
+      }
       const isConforme = minDistance <= 10;
 
       return {
@@ -87,7 +88,7 @@ export const getStops = async () => {
       };
     });
 
-    return Response.json({ success: true, data: formattedData });
+    return Response.json({ success: true, data: arrets });
   } catch (error) {
     console.error('Error getStops:', error);
     return Response.json(

@@ -56,12 +56,37 @@ const LocationPicker = ({ mode, onLocationSelect, currentPos, polygonPoints, set
         },
     });
 
+    const pointIcon = L.divIcon({
+        className: 'custom-point-marker',
+        html: `
+            <div style="
+                width: 30px; height: 30px;
+                background: #f97316;
+                border: 2px solid white;
+                border-radius: 50% 50% 50% 0;
+                transform: rotate(-45deg);
+                display: flex; align-items: center; justify-content: center;
+                box-shadow: 0 3px 6px rgba(0,0,0,0.3);
+            ">
+                <div style="
+                    width: 10px; height: 10px;
+                    background: white;
+                    border-radius: 50%;
+                    transform: rotate(45deg);
+                "></div>
+            </div>
+        `,
+        iconSize: [30, 30],
+        iconAnchor: [15, 30],
+    });
+
     return (
         <>
             {mode === 'point' && currentPos && (
                 <Marker
                     position={currentPos}
                     draggable={true}
+                    icon={pointIcon}
                     eventHandlers={{
                         dragend: (e) => onLocationSelect(e.target.getLatLng()),
                     }}
@@ -88,14 +113,17 @@ const PoiModal = ({ isOpen, onClose, initialData, groups = [], onSubmit }) => {
     if (!isOpen) return null;
 
     const [formData, setFormData] = useState({
-        nom: '',
+        code: '',
         type: 'Point',
         groupe: groups[0]?.nom || 'Dépôt',
         lat: '',
         lng: '',
-        adresse: '',
-        rayon: ''
+        description: '',
+        rayon: '',
+        nouveauGroupe: ''
     });
+
+    const [isAddingGroup, setIsAddingGroup] = useState(false);
 
     const [mode, setMode] = useState('point');
     const [polygonPoints, setPolygonPoints] = useState([]);
@@ -103,24 +131,26 @@ const PoiModal = ({ isOpen, onClose, initialData, groups = [], onSubmit }) => {
     useEffect(() => {
         if (initialData) {
             setFormData({
-                nom: initialData.nom || '',
+                code: initialData.code || '',
                 type: initialData.type || 'Point',
                 groupe: initialData.groupe || (groups[0]?.nom || 'Dépôt'),
                 lat: initialData.lat?.toString() || '',
                 lng: initialData.lng?.toString() || '',
-                adresse: initialData.adresse || '',
+                description: initialData.description || '',
                 rayon: initialData.rayon !== null && initialData.rayon !== undefined ? initialData.rayon.toString() : ''
             });
         } else {
             setFormData({
-                nom: '',
+                code: '',
                 type: 'Point',
                 groupe: groups[0]?.nom || 'Dépôt',
                 lat: '',
                 lng: '',
-                adresse: '',
-                rayon: ''
+                description: '',
+                rayon: '',
+                nouveauGroupe: ''
             });
+            setIsAddingGroup(false);
         }
     }, [initialData, groups, isOpen]);
 
@@ -155,7 +185,19 @@ const PoiModal = ({ isOpen, onClose, initialData, groups = [], onSubmit }) => {
         }
 
         if (onSubmit) {
-            onSubmit({ ...formData, lat, lng, rayon });
+            const finalGroupe = isAddingGroup ? formData.nouveauGroupe : formData.groupe;
+            if (isAddingGroup && !formData.nouveauGroupe.trim()) {
+                alert('Veuillez saisir un nom pour le nouveau groupe.');
+                return;
+            }
+            onSubmit({
+                ...formData,
+                groupe: finalGroupe,
+                groupeDescription: isAddingGroup ? formData.nouveauGroupeDescription : '',
+                lat,
+                lng,
+                rayon
+            });
         }
     };
 
@@ -173,12 +215,12 @@ const PoiModal = ({ isOpen, onClose, initialData, groups = [], onSubmit }) => {
 
                     <form onSubmit={handleSubmit} className="flex-1 space-y-4">
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Nom *</label>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Code *</label>
                             <input
                                 type="text"
                                 required
-                                value={formData.nom}
-                                onChange={e => setFormData({ ...formData, nom: e.target.value })}
+                                value={formData.code}
+                                onChange={e => setFormData({ ...formData, code: e.target.value })}
                                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none transition-all"
                                 placeholder="Ex: Entrepôt Nord"
                             />
@@ -199,23 +241,57 @@ const PoiModal = ({ isOpen, onClose, initialData, groups = [], onSubmit }) => {
                             <div>
                                 <label className="block text-sm font-medium text-gray-700 mb-1">Groupe *</label>
                                 <select
-                                    value={formData.groupe}
-                                    onChange={e => setFormData({ ...formData, groupe: e.target.value })}
+                                    value={isAddingGroup ? 'NEW' : formData.groupe}
+                                    onChange={e => {
+                                        if (e.target.value === 'NEW') {
+                                            setIsAddingGroup(true);
+                                        } else {
+                                            setIsAddingGroup(false);
+                                            setFormData({ ...formData, groupe: e.target.value });
+                                        }
+                                    }}
                                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 outline-none"
                                 >
                                     {groups.map(g => (
                                         <option key={g.id} value={g.nom}>{g.nom}</option>
                                     ))}
+                                    <option value="NEW">+ Nouveau groupe...</option>
                                 </select>
                             </div>
                         </div>
 
+                        {isAddingGroup && (
+                            <div className="space-y-3 animate-fade-in py-2 px-3 bg-orange-50/30 rounded-xl border border-orange-100">
+                                <div>
+                                    <label className="block text-[10px] font-bold text-orange-600 uppercase tracking-wider mb-1">Nom du nouveau groupe *</label>
+                                    <input
+                                        type="text"
+                                        required
+                                        value={formData.nouveauGroupe}
+                                        onChange={e => setFormData({ ...formData, nouveauGroupe: e.target.value })}
+                                        className="w-full px-3 py-2 border border-orange-200 bg-white rounded-lg focus:ring-2 focus:ring-orange-500 outline-none transition-all text-sm"
+                                        placeholder="Ex: Entrepôt"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-[10px] font-bold text-orange-600 uppercase tracking-wider mb-1">Description du groupe</label>
+                                    <input
+                                        type="text"
+                                        value={formData.nouveauGroupeDescription}
+                                        onChange={e => setFormData({ ...formData, nouveauGroupeDescription: e.target.value })}
+                                        className="w-full px-3 py-2 border border-orange-200 bg-white rounded-lg focus:ring-2 focus:ring-orange-500 outline-none transition-all text-sm"
+                                        placeholder="Ex: Sites de stockage"
+                                    />
+                                </div>
+                            </div>
+                        )}
+
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Adresse</label>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
                             <input
                                 type="text"
-                                value={formData.adresse}
-                                onChange={e => setFormData({ ...formData, adresse: e.target.value })}
+                                value={formData.description}
+                                onChange={e => setFormData({ ...formData, description: e.target.value })}
                                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none transition-all"
                                 placeholder="Adresse complète..."
                             />

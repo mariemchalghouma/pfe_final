@@ -5,20 +5,13 @@ import { FiSearch, FiFilter, FiPlus, FiEdit2, FiTrash2, FiClock, FiGrid, FiList,
 import PoiModal from '@/components/PoiModal';
 import GroupModal from '@/components/GroupModal';
 import MapModal from '@/components/map/MapModal';
-import { poiAPI } from '@/services/api';
+import { poiAPI, groupsAPI } from '@/services/api';
 import * as XLSX from 'xlsx';
 
-const initialGroups = [
-    { id: 'g1', nom: 'Dépôt', description: 'Sites principaux', couleur: '#fbbf24', bg: '#fffbeb', border: '#f59e0b' },
-    { id: 'g2', nom: 'Client Interne', description: 'Clients groupe', couleur: '#f97316', bg: '#fff7ed', border: '#ea580c' },
-    { id: 'g3', nom: 'Client Externe', description: 'Clients tiers', couleur: '#ef4444', bg: '#fef2f2', border: '#dc2626' },
-    { id: 'g4', nom: 'Station', description: 'Stations service', couleur: '#a855f7', bg: '#faf5ff', border: '#9333ea' },
-    { id: 'g5', nom: 'Zone Industrielle', description: 'Zones logistiques', couleur: '#06b6d4', bg: '#ecfeff', border: '#0891b2' },
-];
 
 const GestionPoi = () => {
     const [pois, setPois] = useState([]);
-    const [groups, setGroups] = useState(initialGroups);
+    const [groups, setGroups] = useState([]);
     const [history, setHistory] = useState([]);
     const [historySearch, setHistorySearch] = useState('');
     const [historyActionFilter, setHistoryActionFilter] = useState('ALL');
@@ -59,7 +52,19 @@ const GestionPoi = () => {
         }
     };
 
-    useEffect(() => { fetchPois(); }, []);
+    const fetchGroups = async () => {
+        try {
+            const response = await groupsAPI.getGroups();
+            setGroups(response.data || []);
+        } catch (error) {
+            console.error('Failed to fetch groups:', error);
+        }
+    };
+
+    useEffect(() => {
+        fetchPois();
+        fetchGroups();
+    }, []);
 
     useEffect(() => {
         if (activeTab === 'historique') fetchHistory();
@@ -67,7 +72,7 @@ const GestionPoi = () => {
 
     const filteredPois = useMemo(() => {
         return pois.filter((poi) => {
-            const matchesSearch = poi.nom.toLowerCase().includes(search.toLowerCase());
+            const matchesSearch = (poi.code || '').toLowerCase().includes(search.toLowerCase());
             const matchesGroup = filterGroup === 'Tous' || poi.groupe === filterGroup;
             return matchesSearch && matchesGroup;
         });
@@ -76,7 +81,7 @@ const GestionPoi = () => {
     const filteredHistory = useMemo(() => {
         return history.filter((item) => {
             const matchesSearch =
-                (item.poi_nom || '').toLowerCase().includes(historySearch.toLowerCase()) ||
+                (item.poi_code || '').toLowerCase().includes(historySearch.toLowerCase()) ||
                 (item.details || '').toLowerCase().includes(historySearch.toLowerCase());
             const matchesAction = historyActionFilter === 'ALL' || item.action === historyActionFilter;
             return matchesSearch && matchesAction;
@@ -88,7 +93,7 @@ const GestionPoi = () => {
         const group = groups.find((g) => g.nom === poi.groupe) || { couleur: '#3b82f6' };
         setMapPositions([{
             id: poi.id, lat: parseFloat(poi.lat), lng: parseFloat(poi.lng),
-            label: poi.nom, color: group.couleur, info: `${poi.groupe} · ${poi.adresse}`,
+            label: poi.code, color: group.couleur, info: `${poi.groupe} · ${poi.description}`,
         }]);
         setIsMapOpen(true);
     };
@@ -98,7 +103,7 @@ const GestionPoi = () => {
             const group = groups.find((g) => g.nom === poi.groupe) || { couleur: '#3b82f6' };
             return {
                 id: poi.id, lat: parseFloat(poi.lat), lng: parseFloat(poi.lng),
-                label: poi.nom, color: group.couleur, info: `${poi.groupe} · ${poi.adresse}`,
+                label: poi.code, color: group.couleur, info: `${poi.groupe} · ${poi.description}`,
             };
         });
         setMapPositions(positions);
@@ -107,6 +112,18 @@ const GestionPoi = () => {
 
     const handleSavePoi = async (poiData) => {
         try {
+            // Check if group is new
+            const groupExists = groups.some(g => g.nom === poiData.groupe);
+            if (!groupExists && poiData.groupe) {
+                const couleur = '#fbbf24'; // Default
+                await groupsAPI.createGroup({
+                    nom: poiData.groupe,
+                    description: poiData.groupeDescription || '',
+                    couleur
+                });
+                await fetchGroups();
+            }
+
             if (editingPoi) {
                 await poiAPI.updatePOI(editingPoi.id, poiData);
             } else {
@@ -144,12 +161,12 @@ const GestionPoi = () => {
                 const data = XLSX.utils.sheet_to_json(ws);
                 for (const row of data) {
                     await poiAPI.createPOI({
-                        nom: row.Nom || row.nom,
+                        code: row.Code || row.code || row.Nom || row.nom,
                         groupe: row.Groupe || row.groupe || 'Tous',
                         type: row.Type || row.type || 'Point',
                         lat: row.Lat || row.lat,
                         lng: row.Lng || row.lng,
-                        adresse: row.Adresse || row.adresse || '',
+                        description: row.Description || row.description || row.Adresse || row.adresse || '',
                     });
                 }
                 alert(`${data.length} POI importés avec succès !`);
@@ -163,14 +180,19 @@ const GestionPoi = () => {
         e.target.value = null;
     };
 
-    const handleSaveGroup = (groupData) => {
-        if (editingGroup) {
-            setGroups(groups.map((g) => (g.id === editingGroup.id ? { ...g, ...groupData } : g)));
-        } else {
-            const newGroup = { id: `g${Date.now()}`, ...groupData, bg: '#f9fafb', border: groupData.couleur };
-            setGroups([...groups, newGroup]);
+    const handleSaveGroup = async (groupData) => {
+        try {
+            if (editingGroup) {
+                await groupsAPI.updateGroup(editingGroup.id, groupData);
+            } else {
+                await groupsAPI.createGroup(groupData);
+            }
+            setShowGroupModal(false);
+            setEditingGroup(null);
+            fetchGroups();
+        } catch (error) {
+            console.error('Failed to save group:', error);
         }
-        setEditingGroup(null);
     };
 
     const handleEditGroupClick = (group) => {
@@ -178,15 +200,20 @@ const GestionPoi = () => {
         setShowGroupModal(true);
     };
 
-    const handleDeleteGroup = (groupId) => {
+    const handleDeleteGroup = async (groupId) => {
         if (window.confirm('Voulez-vous vraiment supprimer ce groupe ?')) {
-            setGroups(groups.filter((g) => g.id !== groupId));
+            try {
+                await groupsAPI.deleteGroup(groupId);
+                fetchGroups();
+            } catch (error) {
+                console.error('Failed to delete group:', error);
+            }
         }
     };
 
     return (
         <>
-            <div className="p-8 max-w-[1240px] mx-auto min-h-screen bg-gray-50/30">
+            <div className="p-4 px-6 max-w-[1600px] mx-auto min-h-screen bg-gray-50/30">
                 {/* Header */}
                 <div className="mb-6 flex flex-wrap items-center justify-between gap-6 bg-white p-6 rounded-2xl border border-gray-100 shadow-sm">
                     <div className="flex flex-wrap items-center gap-4">
@@ -249,7 +276,7 @@ const GestionPoi = () => {
                             <table className="w-full text-sm text-left border-collapse">
                                 <thead>
                                     <tr className="bg-gray-50/50 border-b border-gray-100">
-                                        <th className="px-6 py-2.5 font-bold text-gray-500 uppercase tracking-wider text-[11px]">Nom du POI</th>
+                                        <th className="px-6 py-2.5 font-bold text-gray-500 uppercase tracking-wider text-[11px]">Code du POI</th>
                                         <th className="px-6 py-2.5 font-bold text-gray-500 uppercase tracking-wider text-[11px]">Groupe</th>
                                         <th className="px-6 py-2.5 font-bold text-gray-500 uppercase tracking-wider text-[11px]">Type</th>
                                         <th className="px-6 py-2.5 font-bold text-gray-500 uppercase tracking-wider text-[11px]">Localisation</th>
@@ -258,16 +285,22 @@ const GestionPoi = () => {
                                 </thead>
                                 <tbody className="divide-y divide-gray-50">
                                     {filteredPois.map((poi) => {
-                                        const group = groups.find((g) => g.nom === poi.groupe) || groups[0];
+                                        const group = groups.find((g) => g.nom === poi.groupe) || { nom: poi.groupe, couleur: '#94a3b8' };
                                         return (
                                             <tr key={poi.id} onClick={() => handleSelectPoi(poi)}
                                                 className={`group cursor-pointer transition-all hover:bg-gray-50/50 ${selectedPoiId === poi.id ? 'ring-2 ring-inset ring-orange-200' : ''}`}>
                                                 <td className="px-6 py-2 whitespace-nowrap">
-                                                    <span className="font-semibold text-gray-900 text-sm">{poi.nom}</span>
+                                                    <span className="font-semibold text-gray-900 text-sm">{poi.code}</span>
                                                 </td>
                                                 <td className="px-6 py-2 whitespace-nowrap">
-                                                    <span className="px-2.5 py-0.5 rounded-full text-[9px] font-semibold uppercase tracking-wider border"
-                                                        style={{ backgroundColor: group.bg, color: group.couleur, borderColor: group.border }}>
+                                                    <span
+                                                        className="px-2.5 py-0.5 rounded-full text-[9px] font-semibold uppercase tracking-wider border"
+                                                        style={{
+                                                            backgroundColor: `${group.couleur}10`, // 10% opacity
+                                                            color: group.couleur,
+                                                            borderColor: `${group.couleur}30` // 30% opacity
+                                                        }}
+                                                    >
                                                         {poi.groupe}
                                                     </span>
                                                 </td>
@@ -276,7 +309,7 @@ const GestionPoi = () => {
                                                 </td>
                                                 <td className="px-6 py-2 text-gray-500 max-w-xs truncate font-medium">
                                                     <div className="flex flex-col">
-                                                        <span className="truncate">{poi.adresse || 'N/A'}</span>
+                                                        <span className="truncate">{poi.description || 'N/A'}</span>
                                                         <span className="text-[10px] text-gray-400 font-bold mt-0.5">{poi.lat}, {poi.lng}</span>
                                                     </div>
                                                 </td>
@@ -324,7 +357,7 @@ const GestionPoi = () => {
                                         <div key={group.id} className="group relative bg-white border border-gray-100 rounded-[32px] p-6 hover:shadow-xl hover:shadow-gray-200/50 transition-all duration-500 overflow-hidden">
                                             <div className="absolute top-0 right-0 w-32 h-32 -mr-8 -mt-8 rounded-full opacity-[0.03] transition-transform group-hover:scale-150 duration-700" style={{ backgroundColor: group.couleur }}></div>
                                             <div className="flex justify-between items-start mb-6">
-                                                <div className="w-14 h-14 rounded-2xl flex items-center justify-center shadow-inner" style={{ backgroundColor: group.bg }}>
+                                                <div className="w-14 h-14 rounded-2xl flex items-center justify-center shadow-inner" style={{ backgroundColor: `${group.couleur}15` }}>
                                                     <div className="w-5 h-5 rounded-full shadow-sm" style={{ backgroundColor: group.couleur }}></div>
                                                 </div>
                                                 <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity translate-y-2 group-hover:translate-y-0 duration-300">
@@ -414,7 +447,7 @@ const GestionPoi = () => {
                                                         <div className="flex-1 min-w-0">
                                                             <div className="flex justify-between items-start mb-3">
                                                                 <div>
-                                                                    <h4 className="text-[13px] font-black text-gray-900 tracking-tight leading-none mb-1">{item.poi_nom}</h4>
+                                                                    <h4 className="text-[13px] font-black text-gray-900 tracking-tight leading-none mb-1">{item.poi_code}</h4>
                                                                     <p className="text-[10px] font-bold text-gray-400 flex items-center gap-1.5 uppercase">
                                                                         <FiClock size={10} />
                                                                         {new Date(item.created_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}

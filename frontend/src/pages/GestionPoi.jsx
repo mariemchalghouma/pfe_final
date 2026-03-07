@@ -1,3 +1,5 @@
+"use client";
+
 import { useState, useMemo, useRef, useEffect } from 'react';
 import Layout from '../components/layout/Layout';
 import { FiSearch, FiFilter, FiPlus, FiEdit2, FiTrash2, FiClock, FiGrid, FiList, FiMap, FiUpload } from 'react-icons/fi';

@@ -26,17 +26,17 @@ export const getOuvertures = async (date, camion) => {
           o.temp_var,
           o.temp_fer,
           nearest.poi_id,
-          nearest.poi_nom,
+          nearest.poi_code,
           nearest.poi_groupe,
-          nearest.poi_adresse,
+          nearest.poi_description,
           nearest.distance_m
       FROM voyagetracking_port_ouvert o
       LEFT JOIN LATERAL (
         SELECT
             p.id AS poi_id,
-            p.nom AS poi_nom,
+            p.code AS poi_code,
             p.groupe AS poi_groupe,
-            p.adresse AS poi_adresse,
+            p.description AS poi_description,
             ROUND((
                 6371000 * 2 * ASIN(
                     SQRT(
@@ -79,9 +79,9 @@ export const getOuvertures = async (date, camion) => {
       const dureeMinutes = row.duree_minutes !== null ? Number(row.duree_minutes) : null;
       const statut =
         distancePoiMetres !== null &&
-        distancePoiMetres <= DISTANCE_MAX_METRES &&
-        dureeMinutes !== null &&
-        dureeMinutes <= DUREE_MAX_MINUTES
+          distancePoiMetres <= DISTANCE_MAX_METRES &&
+          dureeMinutes !== null &&
+          dureeMinutes <= DUREE_MAX_MINUTES
           ? 'conforme'
           : 'non_conforme';
 
@@ -93,9 +93,9 @@ export const getOuvertures = async (date, camion) => {
         lat: row.lat ? Number(row.lat) : null,
         lng: row.lng ? Number(row.lng) : null,
         poiStop: row.poistop,
-        poiProche: row.poi_nom || null,
+        poiProche: row.poi_code || null,
         groupePoiProche: row.poi_groupe || null,
-        adressePoiProche: row.poi_adresse || null,
+        adressePoiProche: row.poi_description || null,
         distancePoiMetres,
         seuilConformiteMetres: DISTANCE_MAX_METRES,
         dureeMinutes,

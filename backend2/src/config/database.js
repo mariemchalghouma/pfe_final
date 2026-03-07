@@ -1,9 +1,9 @@
 import pkg from 'pg';
 import dotenv from 'dotenv';
+import path from 'path';
 
 const { Pool } = pkg;
-
-dotenv.config();
+dotenv.config({ path: path.resolve(process.cwd(), '.env.local') });
 
 const pool = new Pool({
   host: process.env.DB_HOST,

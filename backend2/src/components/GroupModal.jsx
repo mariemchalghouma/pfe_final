@@ -13,6 +13,7 @@ const GroupModal = ({ isOpen, onClose, initialData, onSubmit }) => {
 
     const [formData, setFormData] = useState({
         nom: '',
+        description: '',
         couleur: COLORS[0]
     });
 
@@ -20,10 +21,11 @@ const GroupModal = ({ isOpen, onClose, initialData, onSubmit }) => {
         if (initialData) {
             setFormData({
                 nom: initialData.nom || '',
+                description: initialData.description || '',
                 couleur: initialData.couleur || COLORS[0]
             });
         } else {
-            setFormData({ nom: '', couleur: COLORS[0] });
+            setFormData({ nom: '', description: '', couleur: COLORS[0] });
         }
     }, [initialData, isOpen]);
 
@@ -62,6 +64,17 @@ const GroupModal = ({ isOpen, onClose, initialData, onSubmit }) => {
                                 onChange={e => setFormData({ ...formData, nom: e.target.value })}
                                 className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none transition-all"
                                 placeholder="Ex: Dépôts, Clients, Stations..."
+                            />
+                        </div>
+
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+                            <textarea
+                                value={formData.description}
+                                onChange={e => setFormData({ ...formData, description: e.target.value })}
+                                rows="3"
+                                className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none transition-all resize-none"
+                                placeholder="Description du groupe..."
                             />
                         </div>
 

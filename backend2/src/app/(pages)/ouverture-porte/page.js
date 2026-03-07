@@ -5,7 +5,7 @@ import { FiCheckCircle, FiXCircle, FiMapPin, FiFilter, FiMap } from 'react-icons
 import { ouverturesAPI } from '@/services/api';
 import MapModal from '@/components/map/MapModal';
 import {
-    BarChart, Bar, XAxis, YAxis, CartesianGrid,
+    LineChart, Line, XAxis, YAxis, CartesianGrid,
     Tooltip, ResponsiveContainer,
 } from 'recharts';
 
@@ -250,21 +250,37 @@ const OuverturePorte = () => {
                     <h3 className="text-[11px] font-bold text-gray-400 uppercase tracking-[0.1em] mb-6">
                         OUVERTURES PAR DATE — CONFORME VS NON CONFORME
                     </h3>
-                    <div className="h-[180px] w-full">
+                    <div className="h-[110px] w-full">
                         <ResponsiveContainer width="100%" height="100%">
-                            <BarChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 20 }}>
+                            <LineChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                                 <XAxis dataKey="date" tick={{ fill: '#94a3b8', fontSize: 11, fontWeight: 600 }} axisLine={false} tickLine={false} />
                                 <YAxis tick={{ fill: '#cbd5e1', fontSize: 10, fontWeight: 500 }} axisLine={false} tickLine={false} width={32} />
                                 <Tooltip cursor={{ fill: 'rgba(241,245,249,0.35)' }} contentStyle={{ borderRadius: '10px', border: '1px solid #e2e8f0', fontSize: 12 }} />
-                                <Bar dataKey="conforme" stackId="a" fill="#46B519" radius={[4, 4, 0, 0]} maxBarSize={54} />
-                                <Bar dataKey="non_conforme" stackId="a" fill="#FF4B50" radius={[4, 4, 0, 0]} maxBarSize={54} />
-                            </BarChart>
+                                <Line
+                                    type="monotone"
+                                    dataKey="conforme"
+                                    name="Conforme"
+                                    stroke="#46B519"
+                                    strokeWidth={2}
+                                    dot={{ r: 4, fill: '#46B519', strokeWidth: 2, stroke: '#fff' }}
+                                    activeDot={{ r: 6 }}
+                                />
+                                <Line
+                                    type="monotone"
+                                    dataKey="non_conforme"
+                                    name="Non conforme"
+                                    stroke="#FF4B50"
+                                    strokeWidth={2}
+                                    dot={{ r: 4, fill: '#FF4B50', strokeWidth: 2, stroke: '#fff' }}
+                                    activeDot={{ r: 6 }}
+                                />
+                            </LineChart>
                         </ResponsiveContainer>
                     </div>
                     <div className="mt-4 flex items-center justify-center gap-8 text-sm font-semibold text-gray-500">
-                        <span className="inline-flex items-center gap-2"><span className="w-4 h-4 rounded bg-[#46B519]" /> CONFORME</span>
-                        <span className="inline-flex items-center gap-2"><span className="w-4 h-4 rounded bg-[#FF4B50]" /> NON CONFORME</span>
+                        <span className="inline-flex items-center gap-2"><span className="w-4 h-4 rounded-full bg-[#46B519]" /> CONFORME</span>
+                        <span className="inline-flex items-center gap-2"><span className="w-4 h-4 rounded-full bg-[#FF4B50]" /> NON CONFORME</span>
                     </div>
                 </div>
 

@@ -4,7 +4,7 @@ import { useAuth } from '../../context/AuthContext';
 import {
     FiGrid, FiTruck, FiStopCircle, FiUnlock,
     FiDroplet, FiMapPin,
-    FiSettings, FiLogOut, FiMenu
+    FiSettings, FiLogOut, FiMenu, FiShield
 } from 'react-icons/fi';
 
 // Context for sidebar state
@@ -33,6 +33,7 @@ const Sidebar = () => {
 
     const secondaryMenu = [
         { name: 'Gestion POI', path: '/gestion-poi', icon: FiMapPin },
+        { name: 'Administration', path: '/administration', icon: FiShield },
         { name: 'Paramètres', path: '/parametres', icon: FiSettings },
     ];
 
