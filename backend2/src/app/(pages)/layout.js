@@ -1,9 +1,10 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import Sidebar, { SidebarContext, useSidebar } from '@/components/layout/Sidebar';
+import { canAccessPath, getDefaultAuthorizedPath, isActiveUser } from '@/utils/permissions';
 
 const DashboardContent = ({ children }) => {
     const { isCollapsed } = useSidebar();
@@ -22,15 +23,27 @@ const DashboardContent = ({ children }) => {
 };
 
 export default function DashboardLayout({ children }) {
-    const { isAuthenticated, loading } = useAuth();
+    const { isAuthenticated, loading, user, logout } = useAuth();
     const router = useRouter();
+    const pathname = usePathname();
     const [isCollapsed, setIsCollapsed] = useState(false);
 
     useEffect(() => {
         if (!loading && !isAuthenticated) {
             router.push('/login');
+            return;
         }
-    }, [isAuthenticated, loading, router]);
+
+        if (!loading && user && !isActiveUser(user)) {
+            logout();
+            router.push('/login');
+            return;
+        }
+
+        if (!loading && user && pathname && !canAccessPath(user, pathname)) {
+            router.push(getDefaultAuthorizedPath(user));
+        }
+    }, [isAuthenticated, loading, pathname, router, user, logout]);
 
     if (loading) {
         return (

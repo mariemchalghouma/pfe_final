@@ -1,37 +1,69 @@
 import jwt from 'jsonwebtoken';
 import pool from '../config/database.js';
 
+const normalizeRoles = (roles) => {
+  if (Array.isArray(roles)) return roles;
+  if (typeof roles === 'string') {
+    try {
+      const parsed = JSON.parse(roles);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+};
+
+const isUserActive = (status) => String(status || '').trim().toLowerCase() === 'actif';
+
 export const login = async (req) => {
   try {
-    const { email, password } = await req.json();
+    const { identifiant, email, password } = await req.json();
+    const loginValue = (identifiant || email || '').trim();
 
-    const result = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
+    if (!loginValue || !password) {
+      return Response.json(
+        { success: false, message: 'Identifiant et mot de passe requis' },
+        { status: 400 }
+      );
+    }
+
+    const result = await pool.query('SELECT * FROM users WHERE LOWER(identifiant) = LOWER($1)', [loginValue]);
 
     if (result.rows.length === 0) {
       return Response.json(
-        { success: false, message: 'Email ou mot de passe invalide' },
+        { success: false, message: 'Identifiant ou mot de passe invalide' },
         { status: 401 }
       );
     }
 
     const user = result.rows[0];
+
+    if (!isUserActive(user.status)) {
+      return Response.json(
+        { success: false, message: 'Votre compte est inactif. Contactez un administrateur.' },
+        { status: 403 }
+      );
+    }
+
+    const roles = normalizeRoles(user.roles);
     const isMatch = password == user.password;
 
     if (!isMatch) {
       return Response.json(
-        { success: false, message: 'Email ou mot de passe invalide' },
+        { success: false, message: 'Identifiant ou mot de passe invalide' },
         { status: 401 }
       );
     }
 
-    const token = jwt.sign({ id: user.id, email: user.email }, process.env.JWT_SECRET, {
+    const token = jwt.sign({ id: user.id, identifiant: user.identifiant, roles, status: user.status }, process.env.JWT_SECRET, {
       expiresIn: process.env.JWT_EXPIRE || '2d',
     });
 
     return Response.json({
       success: true,
       data: {
-        user: { id: user.id, email: user.email, name: user.name },
+        user: { id: user.id, identifiant: user.identifiant, name: user.name, roles, status: user.status },
         token,
       },
     });
@@ -46,11 +78,33 @@ export const login = async (req) => {
 
 export const getMe = async (user) => {
   try {
-    const result = await pool.query('SELECT id, email, name, created_at FROM users WHERE id = $1', [
+    const result = await pool.query('SELECT id, identifiant, name, roles, status, created_at FROM users WHERE id = $1', [
       user.id,
     ]);
 
-    return Response.json({ success: true, data: result.rows[0] });
+    if (result.rows.length === 0) {
+      return Response.json(
+        { success: false, message: 'Utilisateur non trouvé' },
+        { status: 404 }
+      );
+    }
+
+    const dbUser = result.rows[0];
+
+    if (!isUserActive(dbUser.status)) {
+      return Response.json(
+        { success: false, message: 'Votre compte est inactif. Contactez un administrateur.' },
+        { status: 403 }
+      );
+    }
+
+    return Response.json({
+      success: true,
+      data: {
+        ...dbUser,
+        roles: normalizeRoles(dbUser.roles),
+      },
+    });
   } catch (error) {
     console.error('Error in getMe:', error);
     return Response.json(

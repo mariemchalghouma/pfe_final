@@ -1,9 +1,11 @@
 import pool from '../config/database.js';
 
-export const getOuvertures = async (date, camion) => {
+export const getOuvertures = async ({ date, dateStart, dateEnd, camion }) => {
   try {
     const DISTANCE_MAX_METRES = 5;
     const DUREE_MAX_MINUTES = 30;
+    const start = dateStart || date || new Date().toISOString().split('T')[0];
+    const end = dateEnd || date || start;
 
     let query = `
       SELECT
@@ -58,11 +60,13 @@ export const getOuvertures = async (date, camion) => {
     const params = [];
     let paramIndex = 1;
 
-    if (date) {
-      query += ` AND DATE(o.date_ouverture) = $${paramIndex}`;
-      params.push(date);
-      paramIndex++;
-    }
+    query += `
+      AND DATE(o.date_ouverture) BETWEEN $${paramIndex} AND $${paramIndex + 1}
+      AND o.date_fermeture IS NOT NULL
+      AND DATE(o.date_fermeture) BETWEEN $${paramIndex} AND $${paramIndex + 1}
+    `;
+    params.push(start, end);
+    paramIndex += 2;
 
     if (camion) {
       query += ` AND o.camion = $${paramIndex}`;

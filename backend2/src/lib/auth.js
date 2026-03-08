@@ -1,5 +1,18 @@
 import jwt from 'jsonwebtoken';
 
+const normalizeRoles = (roles) => {
+  if (Array.isArray(roles)) return roles;
+  if (typeof roles === 'string') {
+    try {
+      const parsed = JSON.parse(roles);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+};
+
 export const verifyAuth = (request) => {
   const authHeader = request.headers.get('authorization') || '';
 
@@ -18,3 +31,8 @@ export const verifyAuth = (request) => {
 
 export const unauthorizedResponse = (message = 'Non autorisé - Token invalide') =>
   Response.json({ success: false, message }, { status: 401 });
+
+export const forbiddenResponse = (message = 'Accès interdit') =>
+  Response.json({ success: false, message }, { status: 403 });
+
+export const hasRole = (user, role) => normalizeRoles(user?.roles).includes(role);

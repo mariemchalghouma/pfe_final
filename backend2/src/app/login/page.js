@@ -3,10 +3,11 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
+import { getDefaultAuthorizedPath } from '@/utils/permissions';
 
 const Login = () => {
     const [formData, setFormData] = useState({
-        email: '',
+        identifiant: '',
         password: '',
     });
     const [showPassword, setShowPassword] = useState(false);
@@ -26,13 +27,13 @@ const Login = () => {
         setLoading(true);
 
         try {
-            await login(formData.email, formData.password);
+            const response = await login(formData.identifiant, formData.password);
             if (typeof window !== 'undefined') {
                 sessionStorage.setItem('loginSuccess', '1');
             }
-            router.push('/dashboard');
+            router.push(getDefaultAuthorizedPath(response?.data?.user));
         } catch (err) {
-            setError(err.message || 'Email ou mot de passe invalide');
+            setError(err.message || 'Identifiant ou mot de passe invalide');
         } finally {
             setLoading(false);
         }
@@ -83,13 +84,13 @@ const Login = () => {
                                 </svg>
                             </div>
                             <input
-                                type="email"
-                                name="email"
-                                value={formData.email}
+                                type="text"
+                                name="identifiant"
+                                value={formData.identifiant}
                                 onChange={handleChange}
                                 className="w-full pl-12 pr-4 py-3.5 border border-gray-300 rounded-xl text-gray-700 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-orange-400 focus:border-transparent transition-all"
                                 required
-                                placeholder="Email"
+                                placeholder="Identifiant"
                             />
                         </div>
 

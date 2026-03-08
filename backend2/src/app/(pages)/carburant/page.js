@@ -3,11 +3,13 @@
 import { useEffect, useMemo, useState, useCallback } from 'react';
 import {
   FiSearch, FiX, FiAlertTriangle, FiCheckCircle, FiMapPin,
-  FiTruck, FiUser, FiFileText,
+  FiTruck, FiUser, FiFileText, FiEye, FiSettings, FiDroplet,
+  FiBarChart2, FiActivity, FiCalendar, FiClock, FiArrowLeft, FiFilter,
 } from 'react-icons/fi';
 import {
   LineChart, Line, ResponsiveContainer, XAxis, YAxis,
-  CartesianGrid, Tooltip, Area,
+  CartesianGrid, Tooltip, Area, ReferenceLine,
+  BarChart, Bar, ComposedChart, Legend,
 } from 'recharts';
 import { camionsAPI, carburantAPI } from '@/services/api';
 import dynamic from 'next/dynamic';
@@ -33,7 +35,7 @@ const createStationIcon = () => {
   const L = require('leaflet');
   return L.divIcon({
     className: 'custom-marker',
-    html: '<div style="width:32px;height:32px;background:#3b82f6;border:3px solid white;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:16px;box-shadow:0 3px 10px rgba(0,0,0,0.3);">⛽</div>',
+    html: '<div style="width:32px;height:32px;background:#22c55e;border:3px solid white;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:16px;box-shadow:0 3px 10px rgba(0,0,0,0.3);">⛽</div>',
     iconSize: [32, 32], iconAnchor: [16, 16], popupAnchor: [0, -16],
   });
 };
@@ -43,7 +45,7 @@ const createTruckIcon = () => {
   const L = require('leaflet');
   return L.divIcon({
     className: 'custom-marker',
-    html: '<div style="width:34px;height:34px;background:#f97316;border:3px solid white;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:17px;box-shadow:0 3px 10px rgba(0,0,0,0.3);">🚛</div>',
+    html: '<div style="width:34px;height:34px;background:#ef4444;border:3px solid white;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:17px;box-shadow:0 3px 10px rgba(0,0,0,0.3);">🚛</div>',
     iconSize: [34, 34], iconAnchor: [17, 17], popupAnchor: [0, -17],
   });
 };
@@ -55,14 +57,69 @@ const fmtDateFR = (iso) => {
   return `${d}/${m}/${y}`;
 };
 
+const getEtatMoteurInfo = (point) => {
+  if (!point) return { key: 'inconnu', label: 'Inconnu', color: '#6b7280', bg: '#f3f4f6' };
+
+  const rawState = point.etatMoteur;
+  if (rawState === 'en_route') return { key: 'en_route', label: 'En route', color: '#16a34a', bg: '#dcfce7' };
+  if (rawState === 'arrete') return { key: 'arrete', label: 'Arrêté', color: '#ea580c', bg: '#ffedd5' };
+
+  const numericCon = point.con != null ? Number(point.con) : NaN;
+  if (!Number.isNaN(numericCon)) {
+    return numericCon > 0
+      ? { key: 'en_route', label: 'En route', color: '#16a34a', bg: '#dcfce7' }
+      : { key: 'arrete', label: 'Arrêté', color: '#ea580c', bg: '#ffedd5' };
+  }
+
+  return { key: 'inconnu', label: 'Inconnu', color: '#6b7280', bg: '#f3f4f6' };
+};
+
+/* ═══ SVG Icon Components (matching reference screenshots) ═══ */
+const FuelPumpIcon = () => (
+  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#f97316" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M3 22V5a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v17" />
+    <path d="M3 22h10" />
+    <path d="M13 10h2a2 2 0 0 1 2 2v3a2 2 0 0 0 2 2h0a2 2 0 0 0 2-2V9.83a2 2 0 0 0-.59-1.42L18 6" />
+    <path d="M6 12h4" />
+    <path d="M6 8h4" />
+  </svg>
+);
+
+const DropletIcon = () => (
+  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#f97316" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z" />
+  </svg>
+);
+
+const ChartBarIcon = () => (
+  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#f97316" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <rect x="3" y="12" width="4" height="8" rx="1" />
+    <rect x="10" y="8" width="4" height="12" rx="1" />
+    <rect x="17" y="4" width="4" height="16" rx="1" />
+  </svg>
+);
+
+const TruckSmallIcon = () => (
+  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#f97316" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M1 3h15v13H1z" />
+    <path d="M16 8h4l3 3v5h-7V8z" />
+    <circle cx="5.5" cy="18.5" r="2.5" />
+    <circle cx="18.5" cy="18.5" r="2.5" />
+  </svg>
+);
+
 /* ═══════════════ PAGE ═══════════════ */
 export default function CarburantPage() {
 
   /* ── state: header ── */
-  const [camionsList, setCamionsList] = useState([]);
   const [selectedCamion, setSelectedCamion] = useState('');
-  const [camionSearch, setCamionSearch] = useState('');
-  const [showCamionDropdown, setShowCamionDropdown] = useState(false);
+  const [dateFilterMode, setDateFilterMode] = useState('day');
+  const [filterDate, setFilterDate] = useState('');
+  const [filterStartDate, setFilterStartDate] = useState('');
+  const [filterEndDate, setFilterEndDate] = useState('');
+  const [filterWeek, setFilterWeek] = useState('');
+  const [filterMonth, setFilterMonth] = useState('');
+  const [filterMatricule, setFilterMatricule] = useState('');
   const [dateStart, setDateStart] = useState('');
   const [dateEnd, setDateEnd] = useState('');
 
@@ -71,597 +128,840 @@ export default function CarburantPage() {
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(false);
   const [searched, setSearched] = useState(false);
-  const [activeTab, setActiveTab] = useState('detection');
 
-  /* ── state: detail modal ── */
+  /* ── state: detail view ── */
   const [selRow, setSelRow] = useState(null);
   const [niveauData, setNiveauData] = useState(null);
   const [niveauLoading, setNiveauLoading] = useState(false);
   const [selPoint, setSelPoint] = useState(null);
-  const [modalTab, setModalTab] = useState('detection');
+  const [detailTab, setDetailTab] = useState('detection');
 
-  /* ═══ Load camions list ═══ */
-  useEffect(() => {
-    (async () => {
-      try {
-        const res = await camionsAPI.getCamions();
-        if (res.success) setCamionsList(res.data || []);
-      } catch (err) { console.error('Err camions:', err); }
-    })();
-  }, []);
+  const getDateRangeParams = useCallback(() => {
+    const today = new Date().toISOString().split('T')[0];
+
+    if (dateFilterMode === 'day') {
+      const day = filterDate || today;
+      return { start: day, end: day };
+    }
+
+    if (dateFilterMode === 'range') {
+      return {
+        start: filterStartDate || today,
+        end: filterEndDate || filterStartDate || today,
+      };
+    }
+
+    if (dateFilterMode === 'week' && filterWeek) {
+      const [year, week] = filterWeek.split('-W').map(Number);
+      const firstDayOfYear = new Date(Date.UTC(year, 0, 1));
+      const firstWeekDayOffset = (firstDayOfYear.getUTCDay() || 7) - 1;
+      const weekStart = new Date(firstDayOfYear);
+      weekStart.setUTCDate(firstDayOfYear.getUTCDate() - firstWeekDayOffset + (week - 1) * 7);
+      const weekEnd = new Date(weekStart);
+      weekEnd.setUTCDate(weekStart.getUTCDate() + 6);
+      return {
+        start: weekStart.toISOString().split('T')[0],
+        end: weekEnd.toISOString().split('T')[0],
+      };
+    }
+
+    if (dateFilterMode === 'month' && filterMonth) {
+      const [y, m] = filterMonth.split('-').map(Number);
+      const monthStart = new Date(Date.UTC(y, m - 1, 1));
+      const monthEnd = new Date(Date.UTC(y, m, 0));
+      return {
+        start: monthStart.toISOString().split('T')[0],
+        end: monthEnd.toISOString().split('T')[0],
+      };
+    }
+
+    return { start: today, end: today };
+  }, [dateFilterMode, filterDate, filterStartDate, filterEndDate, filterWeek, filterMonth]);
 
   /* ═══ Rechercher ═══ */
   const handleSearch = useCallback(async () => {
-    if (!selectedCamion || !dateStart || !dateEnd) return;
+    if (!selectedCamion) return;
+    const { start, end } = getDateRangeParams();
+    setDateStart(start);
+    setDateEnd(end);
+
     setLoading(true);
     setSearched(true);
+    setSelRow(null);
+    setNiveauData(null);
     try {
-      const res = await carburantAPI.getEcarts({ camion: selectedCamion, dateStart, dateEnd });
+      const res = await carburantAPI.getEcarts({ camion: selectedCamion, dateStart: start, dateEnd: end });
       if (res.success) {
         setRows(res.data || []);
         setStats(res.stats);
       }
     } catch (err) { console.error('Err search:', err); }
     finally { setLoading(false); }
-  }, [selectedCamion, dateStart, dateEnd]);
+  }, [selectedCamion, getDateRangeParams]);
 
-  /* ═══ Row click → open modal ═══ */
+  useEffect(() => {
+    setSelectedCamion(filterMatricule.trim());
+  }, [filterMatricule]);
+
+  /* ═══ Row click → show detail view ═══ */
   const handleRowClick = useCallback(async (row) => {
     setSelRow(row);
     setSelPoint(null);
     setNiveauData(null);
-    setModalTab('detection');
-    if (row.dateISO) {
+    setDetailTab('detection');
+    if (selectedCamion && dateStart && dateEnd) {
       setNiveauLoading(true);
       try {
-        const res = await carburantAPI.getNiveau(row.camion, { date: row.dateISO });
+        const res = await carburantAPI.getNiveau(selectedCamion, { dateStart, dateEnd });
         if (res.success) setNiveauData(res.data);
       } catch (err) { console.error('Err niveau:', err); }
       finally { setNiveauLoading(false); }
     }
-  }, []);
+  }, [selectedCamion, dateStart, dateEnd]);
 
   /* ═══ Chart click → GPS point ═══ */
   const handleChartClick = (data) => {
     if (data?.activePayload?.[0]) {
       const pt = data.activePayload[0].payload;
-      if (pt.latitude && pt.longitude) setSelPoint(pt);
+      if (pt.latitude && pt.longitude) {
+        setSelPoint(pt);
+        setDetailTab('historique');
+      }
     }
   };
 
-  const closeModal = () => { setSelRow(null); setNiveauData(null); setSelPoint(null); };
-
-  /* Computed */
-  const ecartsFraudes = rows.filter(r => r.statut === 'fraude').length;
-  const alertesCount  = rows.filter(r => r.statut !== 'conforme').length;
+  const closeDetail = () => { setSelRow(null); setNiveauData(null); setSelPoint(null); };
 
   /* ═══════════════════════════════════ RENDER ═══════════════════════════════════ */
   return (
-    <div className="min-h-screen bg-[#eef1f8]">
+    <div className="min-h-screen" style={{ background: '#f5f6fa', fontFamily: "'Inter', sans-serif" }}>
 
       {/* ════════════ TOP BAR ════════════ */}
-      <div className="bg-white shadow-sm">
-        <div className="flex flex-wrap items-center gap-4 px-6 py-4">
-          <h1 className="text-lg font-extrabold text-gray-900 whitespace-nowrap">Détails ravitaillement</h1>
+      <div className="bg-white" style={{ borderBottom: '1px solid #eee' }}>
+        <div className="flex flex-wrap items-center gap-4 px-6 py-5">
+          <h1 style={{ fontSize: '20px', fontWeight: 800, color: '#1a1a2e', letterSpacing: '-0.5px' }}>
+            Ravitaillement
+          </h1>
 
-          {/* Camion selector (autocomplete) */}
-          <div className="relative min-w-[260px]">
-            <input
-              type="text"
-              value={camionSearch}
-              onChange={e => { setCamionSearch(e.target.value); setShowCamionDropdown(true); if (!e.target.value) setSelectedCamion(''); }}
-              onFocus={() => setShowCamionDropdown(true)}
-              placeholder="Saisir ou choisir un matricule…"
-              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-            {showCamionDropdown && (
-              <>
-                <div className="fixed inset-0 z-10" onClick={() => setShowCamionDropdown(false)} />
-                <ul className="absolute z-20 left-0 right-0 mt-1 max-h-60 overflow-y-auto bg-white border border-gray-200 rounded-lg shadow-lg">
-                  {camionsList
-                    .filter(c => c.plaque.toUpperCase().includes(camionSearch.toUpperCase()))
-                    .map(c => (
-                      <li key={c.plaque}
-                        onClick={() => { setSelectedCamion(c.plaque); setCamionSearch(c.plaque); setShowCamionDropdown(false); }}
-                        className={`px-3 py-2 text-sm cursor-pointer hover:bg-blue-50 transition-colors ${
-                          selectedCamion === c.plaque ? 'bg-blue-100 font-bold text-blue-700' : 'text-gray-700'
-                        }`}
-                      >
-                        {c.plaque}
-                      </li>
-                    ))}
-                  {camionsList.filter(c => c.plaque.toUpperCase().includes(camionSearch.toUpperCase())).length === 0 && (
-                    <li className="px-3 py-2 text-sm text-gray-400 italic">Aucun résultat</li>
-                  )}
-                </ul>
-              </>
+          <div className="flex bg-gray-100 p-1 rounded-xl">
+            {[
+              { id: 'day', label: 'Jour' },
+              { id: 'range', label: 'Plage' },
+              { id: 'week', label: 'Semaine' },
+              { id: 'month', label: 'Mois' },
+            ].map((mode) => (
+              <button
+                key={mode.id}
+                onClick={() => setDateFilterMode(mode.id)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${dateFilterMode === mode.id ? 'bg-white text-orange-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+              >
+                {mode.label}
+              </button>
+            ))}
+          </div>
+
+          <div className="flex items-center gap-2">
+            {dateFilterMode === 'day' && (
+              <input type="date" value={filterDate} onChange={(e) => setFilterDate(e.target.value)}
+                className="px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-orange-500 transition-all font-medium" />
+            )}
+            {dateFilterMode === 'range' && (
+              <div className="flex items-center gap-2">
+                <input type="date" value={filterStartDate} onChange={(e) => setFilterStartDate(e.target.value)}
+                  className="px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-orange-500 transition-all font-medium" />
+                <span className="text-gray-400 font-bold">au</span>
+                <input type="date" value={filterEndDate} onChange={(e) => setFilterEndDate(e.target.value)}
+                  className="px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-orange-500 transition-all font-medium" />
+              </div>
+            )}
+            {dateFilterMode === 'week' && (
+              <input type="week" value={filterWeek} onChange={(e) => setFilterWeek(e.target.value)}
+                className="px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-orange-500 transition-all font-medium" />
+            )}
+            {dateFilterMode === 'month' && (
+              <input type="month" value={filterMonth} onChange={(e) => setFilterMonth(e.target.value)}
+                className="px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-orange-500 transition-all font-medium" />
             )}
           </div>
 
-          {/* Dates */}
-          <span className="text-sm text-gray-500 font-medium">Du</span>
-          <input type="date" value={dateStart} onChange={e => setDateStart(e.target.value)}
-            className="px-3 py-2 border border-gray-200 rounded-lg text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500" />
-          <span className="text-sm text-gray-500 font-medium">Au</span>
-          <input type="date" value={dateEnd} onChange={e => setDateEnd(e.target.value)}
-            className="px-3 py-2 border border-gray-200 rounded-lg text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500" />
+          <div className="relative">
+            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+              <FiFilter className="text-gray-400" />
+            </div>
+            <input
+              type="text"
+              placeholder="Matricule..."
+              value={filterMatricule}
+              onChange={(e) => setFilterMatricule(e.target.value)}
+              className="pl-10 pr-3 py-2.5 border border-gray-200 rounded-xl text-sm w-44 focus:outline-none focus:ring-2 focus:ring-orange-500 transition-all"
+            />
+          </div>
 
           {/* Rechercher */}
           <button
             onClick={handleSearch}
-            disabled={!selectedCamion || !dateStart || !dateEnd}
-            className="px-5 py-2 bg-[#1e3a5f] text-white text-sm font-bold rounded-lg inline-flex items-center gap-2 hover:bg-[#16304f] disabled:opacity-40 transition-all"
+            disabled={!selectedCamion}
+            style={{
+              padding: '10px 22px', background: !selectedCamion ? '#d1d5db' : '#f97316',
+              color: 'white', fontSize: '13px', fontWeight: 700, borderRadius: '10px',
+              border: 'none', cursor: !selectedCamion ? 'not-allowed' : 'pointer',
+              display: 'inline-flex', alignItems: 'center', gap: '8px',
+              transition: 'all 0.2s', fontFamily: "'Inter', sans-serif",
+              boxShadow: !selectedCamion ? 'none' : '0 4px 14px rgba(249,115,22,0.3)',
+            }}
           >
             <FiSearch /> Rechercher
-          </button>
-        </div>
-
-        {/* ── Tabs ── */}
-        <div className="flex border-t border-gray-100 px-6">
-          <button onClick={() => setActiveTab('detection')}
-            className={`relative px-4 py-3 text-sm font-bold flex items-center gap-2 transition-all ${activeTab === 'detection' ? 'text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}>
-            <FiFileText className="text-blue-500" /> Détection
-            {activeTab === 'detection' && <span className="absolute bottom-0 left-0 right-0 h-[3px] bg-blue-600 rounded-t" />}
-          </button>
-          <button onClick={() => setActiveTab('ecarts')}
-            className={`relative px-4 py-3 text-sm font-bold flex items-center gap-2 transition-all ${activeTab === 'ecarts' ? 'text-red-600' : 'text-gray-500 hover:text-gray-700'}`}>
-            ⚖️ Écarts &amp; Fraudes
-            {ecartsFraudes > 0 && <span className="px-2 py-0.5 bg-red-500 text-white text-[10px] font-bold rounded-full">{ecartsFraudes}</span>}
-            {activeTab === 'ecarts' && <span className="absolute bottom-0 left-0 right-0 h-[3px] bg-red-600 rounded-t" />}
-          </button>
-          <button onClick={() => setActiveTab('alertes')}
-            className={`relative px-4 py-3 text-sm font-bold flex items-center gap-2 transition-all ${activeTab === 'alertes' ? 'text-red-600' : 'text-gray-500 hover:text-gray-700'}`}>
-            🚩 Alertes
-            {alertesCount > 0 && <span className="px-2 py-0.5 bg-red-500 text-white text-[10px] font-bold rounded-full">{alertesCount}</span>}
-            {activeTab === 'alertes' && <span className="absolute bottom-0 left-0 right-0 h-[3px] bg-red-600 rounded-t" />}
           </button>
         </div>
       </div>
 
       {/* ════════════ CONTENT ════════════ */}
-      <div className="p-6">
+      <div style={{ padding: '24px' }}>
 
         {/* ── Loading ── */}
         {loading && (
-          <div className="flex justify-center py-32">
-            <div className="w-10 h-10 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
+          <div className="flex justify-center" style={{ paddingTop: '120px', paddingBottom: '120px' }}>
+            <div style={{ width: '44px', height: '44px', border: '4px solid #f97316', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+            <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
           </div>
         )}
 
         {/* ── Empty state (before search) ── */}
         {!loading && !searched && (
-          <div className="flex flex-col items-center justify-center py-32 text-center">
-            <div className="w-20 h-20 rounded-2xl bg-red-50 flex items-center justify-center mb-5 text-4xl">⛽</div>
-            <h2 className="text-lg font-bold text-gray-800 mb-2">Aucun camion sélectionné</h2>
-            <p className="text-gray-400 text-sm max-w-md">
-              Choisissez un camion dans la liste à gauche ou dans
-              le sélecteur, puis cliquez <strong>Rechercher</strong>.
+          <div className="flex flex-col items-center justify-center text-center" style={{ paddingTop: '120px', paddingBottom: '120px' }}>
+            <div style={{
+              width: '80px', height: '80px', borderRadius: '20px', background: 'linear-gradient(135deg, #fff7ed, #fed7aa)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '20px', fontSize: '36px',
+            }}>⛽</div>
+            <h2 style={{ fontSize: '18px', fontWeight: 800, color: '#1a1a2e', marginBottom: '8px' }}>Aucun camion sélectionné</h2>
+            <p style={{ color: '#9ca3af', fontSize: '14px', maxWidth: '400px', lineHeight: '1.6' }}>
+              Choisissez un camion dans le sélecteur, puis cliquez <strong style={{ color: '#f97316' }}>Rechercher</strong>.
             </p>
           </div>
         )}
 
         {/* ── Empty result ── */}
         {!loading && searched && rows.length === 0 && (
-          <div className="flex flex-col items-center justify-center py-32 text-center">
-            <FiTruck className="text-5xl text-gray-300 mb-4" />
-            <p className="text-gray-400 font-medium">Aucun ravitaillement trouvé pour cette période.</p>
+          <div className="flex flex-col items-center justify-center text-center" style={{ paddingTop: '120px', paddingBottom: '120px' }}>
+            <FiTruck style={{ fontSize: '52px', color: '#d1d5db', marginBottom: '16px' }} />
+            <p style={{ color: '#9ca3af', fontWeight: 600, fontSize: '15px' }}>Aucun ravitaillement trouvé pour cette période.</p>
           </div>
         )}
 
         {/* ── Results ── */}
-        {!loading && searched && rows.length > 0 && stats && (
+        {!loading && searched && rows.length > 0 && stats && !selRow && (
           <>
-            {/* ═══ Vehicle Info Bar (icon badges) ═══ */}
-            <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4 mb-5 flex flex-wrap items-center gap-6">
-              {/* Camion */}
-              <div className="flex items-center gap-2">
-                <span className="w-9 h-9 rounded-lg bg-blue-50 flex items-center justify-center text-lg">🚛</span>
-                <div>
-                  <p className="text-[10px] font-bold text-gray-400 uppercase">Camion</p>
-                  <p className="text-sm font-black text-gray-800">{selectedCamion}</p>
-                </div>
-              </div>
-
-              <div className="w-px h-10 bg-gray-200" />
-
-              {/* Type carburant */}
-              <div className="flex items-center gap-2">
-                <span className="w-9 h-9 rounded-lg bg-purple-50 flex items-center justify-center text-lg">⛽</span>
-                <div>
-                  <p className="text-[10px] font-bold text-gray-400 uppercase">Type</p>
-                  <p className="text-sm font-bold text-purple-600">{stats.type}</p>
-                </div>
-              </div>
-
-              <div className="w-px h-10 bg-gray-200" />
-
-              {/* Capacité */}
-              <div className="flex items-center gap-2">
-                <span className="w-9 h-9 rounded-lg bg-cyan-50 flex items-center justify-center text-lg">🔋</span>
-                <div>
-                  <p className="text-[10px] font-bold text-gray-400 uppercase">Capacité</p>
-                  <p className="text-sm font-bold text-cyan-600">{stats.capacite || '—'} <span className="text-gray-400 font-normal">L</span></p>
-                </div>
-              </div>
-
-              <div className="w-px h-10 bg-gray-200" />
+            {/* ═══ KPI Cards (matching reference icons) ═══ */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px', marginBottom: '20px' }}>
 
               {/* Consommation moyenne */}
-              <div className="flex items-center gap-2">
-                <span className="w-9 h-9 rounded-lg bg-amber-50 flex items-center justify-center text-lg">📊</span>
+              <div style={{
+                background: 'white', borderRadius: '16px', padding: '20px 24px', display: 'flex', alignItems: 'center', gap: '16px',
+                boxShadow: '0 1px 3px rgba(0,0,0,0.04)', border: '1px solid #f3f4f6',
+              }}>
+                <div style={{
+                  width: '52px', height: '52px', borderRadius: '50%',
+                  border: '2.5px solid #fdba74',
+                  background: '#fff7ed',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+                }}>
+                  <FuelPumpIcon />
+                </div>
                 <div>
-                  <p className="text-[10px] font-bold text-gray-400 uppercase">Conso. moy</p>
-                  <p className="text-sm font-bold text-amber-600">{rows[0]?.consm_moy || '—'}</p>
+                  <p style={{ fontSize: '26px', fontWeight: 800, color: '#1a1a2e', lineHeight: 1.1 }}>
+                    {rows[0]?.consm_moy || '—'}
+                  </p>
+                  <p style={{ fontSize: '12px', color: '#9ca3af', fontWeight: 500, marginTop: '3px' }}>Consommation moyenne</p>
                 </div>
               </div>
 
-              <div className="w-px h-10 bg-gray-200" />
+              {/* Total Ravitaillement */}
+              <div style={{
+                background: 'white', borderRadius: '16px', padding: '20px 24px', display: 'flex', alignItems: 'center', gap: '16px',
+                boxShadow: '0 1px 3px rgba(0,0,0,0.04)', border: '1px solid #f3f4f6',
+              }}>
+                <div style={{
+                  width: '52px', height: '52px', borderRadius: '50%',
+                  border: '2.5px solid #fdba74',
+                  background: '#fff7ed',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+                }}>
+                  <DropletIcon />
+                </div>
+                <div>
+                  <p style={{ fontSize: '26px', fontWeight: 800, color: '#1a1a2e', lineHeight: 1.1 }}>
+                    {stats.totalDeclaree} <span style={{ fontSize: '16px', color: '#9ca3af', fontWeight: 500 }}>L</span>
+                  </p>
+                  <p style={{ fontSize: '12px', color: '#9ca3af', fontWeight: 500, marginTop: '3px' }}>Total Ravitaillement</p>
+                </div>
+              </div>
 
-              {/* Status badges */}
-              <div className="flex items-center gap-4 ml-auto">
-                <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-emerald-50 border border-emerald-200">
-                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-400" />
-                  <span className="text-xs font-bold text-emerald-700">{rows.filter(r => r.statut === 'conforme').length}</span>
-                  <span className="text-[10px] text-emerald-600 font-medium">Conforme</span>
+              {/* Total de carburant utilisé */}
+              <div style={{
+                background: 'white', borderRadius: '16px', padding: '20px 24px', display: 'flex', alignItems: 'center', gap: '16px',
+                boxShadow: '0 1px 3px rgba(0,0,0,0.04)', border: '1px solid #f3f4f6',
+              }}>
+                <div style={{
+                  width: '52px', height: '52px', borderRadius: '50%',
+                  border: '2.5px solid #fdba74',
+                  background: '#fff7ed',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+                }}>
+                  <ChartBarIcon />
                 </div>
-                <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-orange-50 border border-orange-200">
-                  <span className="w-2.5 h-2.5 rounded-full bg-orange-400" />
-                  <span className="text-xs font-bold text-orange-700">{rows.filter(r => r.statut === 'suspect').length}</span>
-                  <span className="text-[10px] text-orange-600 font-medium">Suspect</span>
+                <div>
+                  <p style={{ fontSize: '26px', fontWeight: 800, color: '#1a1a2e', lineHeight: 1.1 }}>
+                    {stats.totalGps}<span style={{ fontSize: '16px', color: '#9ca3af', fontWeight: 500 }}>L</span>
+                  </p>
+                  <p style={{ fontSize: '12px', color: '#9ca3af', fontWeight: 500, marginTop: '3px' }}>Total de carburant utilisé</p>
                 </div>
-                <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-red-50 border border-red-200">
-                  <span className="w-2.5 h-2.5 rounded-full bg-red-400" />
-                  <span className="text-xs font-bold text-red-700">{rows.filter(r => r.statut === 'fraude').length}</span>
-                  <span className="text-[10px] text-red-600 font-medium">Fraude</span>
+              </div>
+
+              {/* Nombre de Ravitaillements */}
+              <div style={{
+                background: 'white', borderRadius: '16px', padding: '20px 24px', display: 'flex', alignItems: 'center', gap: '16px',
+                boxShadow: '0 1px 3px rgba(0,0,0,0.04)', border: '1px solid #f3f4f6',
+              }}>
+                <div style={{
+                  width: '52px', height: '52px', borderRadius: '50%',
+                  border: '2.5px solid #fdba74',
+                  background: '#fff7ed',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+                }}>
+                  <TruckSmallIcon />
+                </div>
+                <div>
+                  <p style={{ fontSize: '26px', fontWeight: 800, color: '#1a1a2e', lineHeight: 1.1 }}>
+                    {stats.nbRavitaillements}
+                  </p>
+                  <p style={{ fontSize: '12px', color: '#9ca3af', fontWeight: 500, marginTop: '3px' }}>Nombre de Ravitaillements</p>
                 </div>
               </div>
             </div>
 
-            {/* ═══ KPI Cards ═══ */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-
-              {/* QTÉ GPS TOTALE */}
-              <div className="bg-white rounded-xl border border-gray-100 p-5 flex items-center gap-4 shadow-sm border-l-4 border-l-red-400">
-                <div className="w-14 h-14 rounded-full bg-red-50 flex items-center justify-center flex-shrink-0 text-2xl">⛽</div>
-                <div>
-                  <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">QTÉ GPS TOTALE</p>
-                  <p className="text-3xl font-black text-gray-800 leading-tight">{stats.totalGps}<sup className="text-sm font-bold text-gray-400 ml-0.5">L</sup></p>
-                  <p className="text-[11px] text-gray-400">Σ table mesure</p>
+            {/* ═══ Analyse Écart (progress bars) ═══ */}
+            <div style={{
+              background: 'white', borderRadius: '16px', padding: '20px', marginBottom: '20px',
+              boxShadow: '0 1px 3px rgba(0,0,0,0.04)', border: '1px solid #f3f4f6',
+            }}>
+              <div className="flex items-center justify-between" style={{ marginBottom: '16px' }}>
+                <div className="flex items-center gap-2">
+                  <FiBarChart2 style={{ color: '#f97316', fontSize: '18px' }} />
+                  <span style={{ fontSize: '14px', fontWeight: 700, color: '#1a1a2e' }}>Analyse Écart</span>
                 </div>
+                <span style={{
+                  fontSize: '13px', fontWeight: 700,
+                  color: stats.ecartGlobal > 0 ? '#ef4444' : stats.ecartGlobal < 0 ? '#f97316' : '#10b981',
+                  background: stats.ecartGlobal > 0 ? '#fef2f2' : stats.ecartGlobal < 0 ? '#fff7ed' : '#ecfdf5',
+                  padding: '4px 12px', borderRadius: '8px',
+                }}>
+                  Écart : {stats.ecartGlobal > 0 ? '+' : ''}{stats.ecartGlobal} L ({stats.totalGps > 0 ? ((Math.abs(stats.ecartGlobal) / stats.totalGps) * 100).toFixed(1) : 0}%)
+                </span>
               </div>
 
-              {/* RAVITAILLEMENTS */}
-              <div className="bg-white rounded-xl border border-gray-100 p-5 flex items-center gap-4 shadow-sm border-l-4 border-l-green-400">
-                <div className="w-14 h-14 rounded-full bg-green-50 flex items-center justify-center flex-shrink-0 text-2xl">🔋</div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
                 <div>
-                  <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">RAVITAILLEMENTS</p>
-                  <p className="text-3xl font-black text-gray-800 leading-tight">{stats.nbRavitaillements}<span className="text-sm font-bold text-gray-400 ml-1">plein(s)</span></p>
-                  <p className="text-[11px] text-gray-400">sur la période</p>
+                  <div className="flex items-center justify-between" style={{ marginBottom: '8px' }}>
+                    <span style={{ fontSize: '12px', color: '#6b7280', fontWeight: 600 }}>Total GPS</span>
+                    <span style={{ fontSize: '13px', fontWeight: 700, color: '#1a1a2e' }}>{stats.totalGps} L</span>
+                  </div>
+                  <div style={{ width: '100%', height: '10px', background: '#f3f4f6', borderRadius: '10px', overflow: 'hidden' }}>
+                    <div style={{
+                      width: '100%', height: '100%', borderRadius: '10px',
+                      background: 'linear-gradient(90deg, #f97316, #fb923c)',
+                    }} />
+                  </div>
                 </div>
-              </div>
-
-              {/* ÉCART GPS / DÉCLARÉ */}
-              <div className="bg-white rounded-xl border border-gray-100 p-5 flex items-center gap-4 shadow-sm border-l-4 border-l-orange-400">
-                <div className="w-14 h-14 rounded-full bg-orange-50 flex items-center justify-center flex-shrink-0 text-2xl">⚖️</div>
                 <div>
-                  <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">ÉCART GPS / DÉCLARÉ</p>
-                  <p className={`text-3xl font-black leading-tight ${stats.ecartGlobal > 0 ? 'text-red-500' : stats.ecartGlobal < 0 ? 'text-orange-500' : 'text-emerald-500'}`}>
-                    {stats.ecartGlobal > 0 ? '+' : ''}{stats.ecartGlobal}<sup className="text-sm font-bold ml-0.5">L</sup>
-                  </p>
-                  {stats.alertes > 0
-                    ? <p className="text-[11px] text-red-500 font-bold">🚩 Fraude probable</p>
-                    : <p className="text-[11px] text-emerald-500 font-bold">✅ Conforme</p>
-                  }
-                </div>
-              </div>
-
-              {/* ALERTES ACTIVES */}
-              <div className="bg-white rounded-xl border border-gray-100 p-5 flex items-center gap-4 shadow-sm border-l-4 border-l-yellow-400">
-                <div className="w-14 h-14 rounded-full bg-yellow-50 flex items-center justify-center flex-shrink-0 text-2xl">🔔</div>
-                <div>
-                  <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">ALERTES ACTIVES</p>
-                  <p className="text-3xl font-black text-gray-800 leading-tight">{stats.alertes}<span className="text-sm font-bold text-gray-400 ml-1">alerte(s)</span></p>
-                  {stats.alertes > 0
-                    ? <p className="text-[11px] text-red-500 font-bold">Action requise</p>
-                    : <p className="text-[11px] text-emerald-500">Rien à signaler</p>
-                  }
+                  <div className="flex items-center justify-between" style={{ marginBottom: '8px' }}>
+                    <span style={{ fontSize: '12px', color: '#6b7280', fontWeight: 600 }}>Ravitaillement</span>
+                    <span style={{ fontSize: '13px', fontWeight: 700, color: '#1a1a2e' }}>{stats.totalDeclaree} L</span>
+                  </div>
+                  <div style={{ width: '100%', height: '10px', background: '#f3f4f6', borderRadius: '10px', overflow: 'hidden' }}>
+                    <div style={{
+                      width: stats.totalGps > 0 ? `${Math.min((stats.totalDeclaree / stats.totalGps) * 100, 100)}%` : '0%',
+                      height: '100%', borderRadius: '10px',
+                      background: 'linear-gradient(90deg, #fbbf24, #f59e0b)',
+                    }} />
+                  </div>
                 </div>
               </div>
             </div>
 
             {/* ═══ TABLE ═══ */}
-            <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
-              {/* Table header */}
-              <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
-                <h3 className="text-sm font-extrabold text-gray-800 flex items-center gap-2">🧾 Ravitaillements détectés</h3>
-                <span className="text-xs text-gray-400 font-semibold">{fmtDateFR(dateStart)} → {fmtDateFR(dateEnd)}</span>
+            <div style={{
+              background: 'white', borderRadius: '16px', overflow: 'hidden',
+              boxShadow: '0 1px 3px rgba(0,0,0,0.04)', border: '1px solid #f3f4f6',
+            }}>
+              <div className="flex items-center justify-between" style={{ padding: '16px 20px', borderBottom: '1px solid #f3f4f6' }}>
+                <div className="flex items-center gap-2">
+                  <FiTruck style={{ color: '#f97316', fontSize: '16px' }} />
+                  <h3 style={{ fontSize: '14px', fontWeight: 700, color: '#1a1a2e' }}>{selectedCamion}</h3>
+                </div>
+                <span style={{ fontSize: '12px', color: '#9ca3af', fontWeight: 600 }}>{fmtDateFR(dateStart)} → {fmtDateFR(dateEnd)}</span>
               </div>
 
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm text-left">
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', fontSize: '13px', textAlign: 'left', borderCollapse: 'collapse' }}>
                   <thead>
-                    <tr className="bg-gray-50 border-b border-gray-100">
-                      <th className="px-5 py-3 font-bold text-gray-500 uppercase text-[11px] tracking-wider">Date</th>
-                      <th className="px-5 py-3 font-bold text-gray-500 uppercase text-[11px] tracking-wider">Heure</th>
-                      <th className="px-5 py-3 font-bold text-gray-500 uppercase text-[11px] tracking-wider">Camion</th>
-                      <th className="px-5 py-3 font-bold text-gray-500 uppercase text-[11px] tracking-wider">Qté GPS (L)</th>
-                      <th className="px-5 py-3 font-bold text-gray-500 uppercase text-[11px] tracking-wider">Qté Déclarée (L)</th>
-                      <th className="px-5 py-3 font-bold text-gray-500 uppercase text-[11px] tracking-wider">Lieu</th>
-                      <th className="px-5 py-3 font-bold text-gray-500 uppercase text-[11px] tracking-wider">Statut</th>
+                    <tr style={{ background: '#fafbfc' }}>
+                      <th style={{ padding: '12px 20px', fontWeight: 700, color: '#6b7280', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>#</th>
+                      <th style={{ padding: '12px 20px', fontWeight: 700, color: '#6b7280', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Date de ravitaillement</th>
+                      <th style={{ padding: '12px 20px', fontWeight: 700, color: '#6b7280', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Adresse</th>
+                      <th style={{ padding: '12px 20px', fontWeight: 700, color: '#6b7280', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.5px', textAlign: 'center' }}>Qté de ravitaillement (L)</th>
+                      <th style={{ padding: '12px 20px', fontWeight: 700, color: '#6b7280', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.5px', textAlign: 'center' }}>Actions</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-gray-50">
+                  <tbody>
                     {rows.map((r, i) => (
-                      <tr key={i} onClick={() => handleRowClick(r)}
-                        className="hover:bg-blue-50/40 cursor-pointer transition-colors">
-                        <td className="px-5 py-3 text-gray-700 font-medium">{r.date}</td>
-                        <td className="px-5 py-3 text-gray-700 font-medium">{r.heure}</td>
-                        <td className="px-5 py-3 text-gray-800 font-bold">{r.camion}</td>
-                        <td className="px-5 py-3 font-bold text-teal-600">{r.qttGps} <span className="text-gray-400 font-normal">L</span></td>
-                        <td className="px-5 py-3 font-bold text-indigo-600">{r.qttDeclaree} <span className="text-gray-400 font-normal">L</span></td>
-                        <td className="px-5 py-3 text-gray-600 text-xs">{r.lieu}</td>
-                        <td className="px-5 py-3">
-                          {r.statut === 'conforme' ? (
-                            <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-600 border border-emerald-200">
-                              <FiCheckCircle className="text-sm" /> Conforme
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold bg-red-50 text-red-600 border border-red-200">
-                              🚩 Fraude probable
-                            </span>
-                          )}
+                      <tr key={i}
+                        style={{
+                          borderTop: '1px solid #f9fafb', cursor: 'pointer', transition: 'background 0.15s',
+                          background: r.statut === 'fraude' ? '#fef2f2' : (i % 2 === 0 ? '#ffffff' : '#fafbfc'),
+                        }}
+                        onMouseEnter={e => e.currentTarget.style.background = '#fff7ed'}
+                        onMouseLeave={e => e.currentTarget.style.background = r.statut === 'fraude' ? '#fef2f2' : (i % 2 === 0 ? '#ffffff' : '#fafbfc')}
+                        onClick={() => handleRowClick(r)}
+                      >
+                        <td style={{ padding: '14px 20px', color: '#6b7280', fontWeight: 500 }}>{i + 1}</td>
+                        <td style={{ padding: '14px 20px', color: '#374151', fontWeight: 600 }}>{r.date}</td>
+                        <td style={{ padding: '14px 20px', color: '#6b7280', fontWeight: 500 }}>{r.lieu}</td>
+                        <td style={{ padding: '14px 20px', textAlign: 'center', fontWeight: 700, color: '#1a1a2e' }}>{r.qttGps}</td>
+                        <td style={{ padding: '14px 20px', textAlign: 'center' }}>
+                          <div className="flex items-center justify-center gap-2">
+                            <button
+                              onClick={(e) => { e.stopPropagation(); handleRowClick(r); }}
+                              style={{
+                                width: '32px', height: '32px', borderRadius: '8px', border: '1px solid #e5e7eb',
+                                background: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                transition: 'all 0.15s', color: '#f97316',
+                              }}
+                              onMouseEnter={e => { e.currentTarget.style.background = '#fff7ed'; e.currentTarget.style.borderColor = '#f97316'; }}
+                              onMouseLeave={e => { e.currentTarget.style.background = 'white'; e.currentTarget.style.borderColor = '#e5e7eb'; }}
+                            >
+                              <FiEye style={{ fontSize: '14px' }} />
+                            </button>
+                            <button
+                              style={{
+                                width: '32px', height: '32px', borderRadius: '8px', border: '1px solid #e5e7eb',
+                                background: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                transition: 'all 0.15s', color: '#6b7280',
+                              }}
+                              onMouseEnter={e => { e.currentTarget.style.background = '#f3f4f6'; }}
+                              onMouseLeave={e => { e.currentTarget.style.background = 'white'; }}
+                            >
+                              <FiSettings style={{ fontSize: '14px' }} />
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
-
-              {/* Footer total row */}
-              <div className="flex flex-wrap items-center justify-between px-5 py-3 text-white text-sm font-bold" style={{ background: '#141a3c' }}>
-                <span className="uppercase tracking-wider">Total Période</span>
-                <div className="flex items-center gap-8">
-                  <span className="text-teal-300">{stats.totalGps} L</span>
-                  <span className="text-indigo-300">{stats.totalDeclaree} L</span>
-                  <span className="px-3 py-1 rounded-lg border border-yellow-400/60 text-yellow-300">
-                    Écart global : {stats.ecartGlobal > 0 ? '+' : ''}{stats.ecartGlobal} L
-                  </span>
-                </div>
-              </div>
             </div>
           </>
         )}
-      </div>
 
-      {/* ════════════════════════ MODAL DÉTAIL ════════════════════════ */}
-      {selRow && (
-        <div className="fixed inset-0 z-[2200] bg-black/40 backdrop-blur-sm flex items-start justify-center pt-4 pb-4 overflow-y-auto" onClick={closeModal}>
-          <div className="w-full max-w-[900px] mx-4 bg-white rounded-2xl shadow-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
+        {/* ═══════════════ DETAIL VIEW (inline, replaces table) ═══════════════ */}
+        {!loading && selRow && (
+          <div>
 
-            {/* ── Header ── */}
-            <div className="px-6 py-4 flex items-center justify-between" style={{ background: '#1e3a5f' }}>
-              <div className="text-white">
-                <h3 className="text-lg font-extrabold">Détails ravitaillement — {selRow.camion}</h3>
-                <p className="text-blue-200 text-xs mt-0.5">{selRow.date} · {selRow.heure}</p>
-              </div>
-              <button onClick={closeModal} className="text-white/80 hover:text-white font-bold text-sm flex items-center gap-1 transition-all">
-                <FiX className="text-lg" /> Fermer
+            {/* ── Detail tabs ── */}
+            <div style={{
+              background: 'white', borderRadius: '16px 16px 0 0', borderBottom: '1px solid #f3f4f6',
+              padding: '0 20px', display: 'flex', alignItems: 'center',
+            }}>
+              <button onClick={closeDetail} style={{
+                display: 'flex', alignItems: 'center', gap: '6px', padding: '14px 12px 14px 0',
+                border: 'none', background: 'transparent', cursor: 'pointer', color: '#6b7280',
+                fontSize: '13px', fontWeight: 600, fontFamily: "'Inter', sans-serif",
+                marginRight: '16px', borderRight: '1px solid #f3f4f6', paddingRight: '16px',
+              }}>
+                <FiArrowLeft /> Retour
               </button>
-            </div>
-
-            {/* ── Modal tabs ── */}
-            <div className="flex border-b border-gray-100 px-6 bg-gray-50/50">
-              {[{ id: 'detection', label: 'Détection' }, { id: 'historique', label: 'Historique' }, { id: 'informations', label: 'Informations' }].map(tab => (
-                <button key={tab.id} onClick={() => setModalTab(tab.id)}
-                  className={`px-4 py-3 text-sm font-bold transition-all relative ${modalTab === tab.id ? 'text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}>
+              {[
+                { id: 'detection', label: 'Detection' },
+                { id: 'historique', label: 'Historique' },
+                { id: 'informations', label: 'Informations' },
+              ].map(tab => (
+                <button key={tab.id} onClick={() => setDetailTab(tab.id)}
+                  style={{
+                    padding: '14px 18px', fontSize: '13px', fontWeight: 700, border: 'none', background: 'transparent',
+                    cursor: 'pointer', fontFamily: "'Inter', sans-serif", position: 'relative',
+                    color: detailTab === tab.id ? '#f97316' : '#6b7280', transition: 'all 0.2s',
+                  }}>
                   {tab.label}
-                  {modalTab === tab.id && <span className="absolute bottom-0 left-0 right-0 h-[3px] bg-blue-600 rounded-t" />}
+                  {detailTab === tab.id && <span style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: '3px', background: '#f97316', borderRadius: '3px 3px 0 0' }} />}
                 </button>
               ))}
             </div>
 
-            {/* ── Info cards (2×2) ── */}
-            <div className="grid grid-cols-2 gap-px bg-gray-100">
-              {/* IMMATRICULATION */}
-              <div className="bg-white p-5">
-                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2">IMMATRICULATION</p>
-                <div className="flex items-center gap-3">
-                  <span className="text-xl">🚛</span>
-                  <div>
-                    <p className="text-lg font-black text-gray-800">{selRow.camion}</p>
-                    <p className="text-xs text-gray-400">{selRow.camion}</p>
+            {/* ═══ TAB CONTENT ═══ */}
+
+            {/* ── DETECTION TAB: smooth orange area chart ── */}
+            {detailTab === 'detection' && (
+              <div style={{
+                background: 'white', padding: '24px', marginBottom: '20px',
+                boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
+              }}>
+                {niveauLoading ? (
+                  <div className="flex justify-center" style={{ padding: '60px 0' }}>
+                    <div style={{ width: '36px', height: '36px', border: '4px solid #f97316', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+                    <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
                   </div>
-                </div>
-              </div>
-
-              {/* QTÉ GPS (TABLE MESURE) */}
-              <div className="bg-white p-5">
-                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2">QTÉ GPS (TABLE MESURE)</p>
-                <p className="text-2xl font-black text-emerald-500 leading-tight">▲ {selRow.qttGps} <span className="text-sm">L</span></p>
-                <p className="text-xs text-gray-400 mt-1">{selRow.heure}</p>
-              </div>
-
-              {/* QTÉ DÉCLARÉE (TABLE TOTALE) */}
-              <div className="bg-white p-5">
-                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2">QTÉ DÉCLARÉE (TABLE TOTALE)</p>
-                <p className="text-2xl font-black text-blue-600 leading-tight">{selRow.qttDeclaree} <span className="text-sm">L</span></p>
-                <p className="text-xs text-gray-400 mt-1">{selRow.prix > 0 ? `${selRow.prix.toFixed(2)} DT` : '—'}</p>
-              </div>
-
-              {/* ÉCART */}
-              <div className="bg-white p-5">
-                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2">ÉCART</p>
-                <p className={`text-2xl font-black leading-tight ${selRow.ecart === 0 ? 'text-emerald-500' : 'text-red-500'}`}>
-                  {selRow.ecart > 0 ? '+' : ''}{selRow.ecart} <span className="text-sm">L</span>
-                </p>
-                {selRow.statut === 'conforme' ? (
-                  <span className="inline-flex items-center gap-1 mt-1 px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-600">✅ Conforme</span>
+                ) : niveauData?.niveauData?.length > 0 ? (
+                  <>
+                    <div style={{ height: '320px', cursor: 'pointer' }}>
+                      <ResponsiveContainer width="100%" height="100%">
+                        <ComposedChart data={niveauData.niveauData} margin={{ left: 10, right: 10, top: 10, bottom: 0 }} onClick={handleChartClick}>
+                          <defs>
+                            <linearGradient id="areaGradOrange" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="0%" stopColor="#f97316" stopOpacity={0.25} />
+                              <stop offset="100%" stopColor="#f97316" stopOpacity={0.03} />
+                            </linearGradient>
+                          </defs>
+                          <CartesianGrid strokeDasharray="3 3" vertical={true} stroke="#e5e7eb" />
+                          <XAxis
+                            dataKey="heure"
+                            tick={{ fill: '#6b7280', fontSize: 10, fontWeight: 500, fontFamily: 'Inter' }}
+                            axisLine={false} tickLine={false}
+                            interval="preserveStartEnd"
+                          />
+                          <YAxis
+                            tick={{ fill: '#6b7280', fontSize: 10, fontFamily: 'Inter' }}
+                            axisLine={false} tickLine={false}
+                            label={{ value: 'Niveau carburant', angle: -90, position: 'insideLeft', style: { fontSize: 11, fill: '#9ca3af', fontFamily: 'Inter' } }}
+                          />
+                          {/* Red dashed threshold line */}
+                          <ReferenceLine y={20} stroke="#ef4444" strokeDasharray="8 5" strokeWidth={1.5} />
+                          <Tooltip content={({ active, payload }) => {
+                            if (!active || !payload?.length) return null;
+                            const d = payload[0]?.payload;
+                            if (!d) return null;
+                            return (
+                              <div style={{
+                                background: 'white', borderRadius: '10px', boxShadow: '0 4px 20px rgba(0,0,0,0.1)',
+                                border: '1px solid #f3f4f6', padding: '10px 14px', fontSize: '13px', fontFamily: "'Inter', sans-serif",
+                              }}>
+                                <p style={{ fontWeight: 600, color: '#6b7280', marginBottom: '2px' }}>
+                                  {d.timestamp ? new Date(d.timestamp).toLocaleDateString('fr-FR', { month: '2-digit', day: '2-digit' }) : ''} {d.heure}
+                                </p>
+                                <p style={{ color: '#f97316', fontWeight: 700 }}>Litres : {d.niveau} L</p>
+                                <p style={{ color: getEtatMoteurInfo(d).color, fontWeight: 700 }}>
+                                  Etat moteur : {getEtatMoteurInfo(d).label}
+                                </p>
+                                <p style={{ color: '#6b7280' }}>
+                                  Lat: {Number(d.latitude).toFixed(5)} | Lng: {Number(d.longitude).toFixed(5)}
+                                </p>
+                                <p style={{ fontSize: '10px', color: '#9ca3af', marginTop: '4px' }}>Cliquez pour localiser</p>
+                              </div>
+                            );
+                          }} />
+                          {/* Orange fill area */}
+                          <Area type="monotone" dataKey="niveau" stroke="none" fill="url(#areaGradOrange)" />
+                          {/* Orange smooth line */}
+                          <Line type="monotone" dataKey="niveau" stroke="#f97316" strokeWidth={2.5}
+                            dot={props => {
+                              const { cx, cy, payload } = props;
+                              const isSelected = selPoint?.heure === payload.heure;
+                              const isRavit = payload.ravitaillement;
+                              return (
+                                <circle key={`dot-${payload.heure}`} cx={cx} cy={cy}
+                                  r={isSelected ? 6 : 3.5}
+                                  fill={isRavit ? '#fb923c' : '#f97316'}
+                                  stroke={isSelected ? '#c2410c' : 'white'}
+                                  strokeWidth={isSelected ? 3 : 1.5}
+                                  style={{ cursor: 'pointer' }} />
+                              );
+                            }}
+                            activeDot={{ r: 6, stroke: '#f97316', strokeWidth: 2, fill: 'white' }}
+                          />
+                        </ComposedChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </>
                 ) : (
-                  <span className="inline-flex items-center gap-1 mt-1 px-2 py-0.5 rounded text-[10px] font-bold bg-red-50 text-red-600">🚩 Fraude probable</span>
+                  <div className="flex flex-col items-center justify-center" style={{ padding: '60px 0', color: '#d1d5db' }}>
+                    <FiTruck style={{ fontSize: '48px', marginBottom: '12px' }} />
+                    <p style={{ fontWeight: 600, fontSize: '14px' }}>Aucune donnée GPS pour cette période</p>
+                  </div>
                 )}
               </div>
-            </div>
+            )}
 
-            {/* ── Fuel level chart ── */}
-            <div className="p-6 border-t border-gray-100">
-              <div className="flex items-center justify-between mb-4">
-                <h4 className="text-sm font-black text-gray-700">
-                  📈 Niveau carburant — {selRow.dateISO
-                    ? new Date(selRow.dateISO + 'T00:00:00').toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })
-                    : '—'}
-                </h4>
-                <div className="flex items-center gap-4 text-xs font-semibold text-gray-400">
-                  <span className="inline-flex items-center gap-1"><span className="w-4 h-[2px] bg-blue-500 rounded inline-block" /> Niveau carburant</span>
-                  <span className="inline-flex items-center gap-1"><span className="w-3 h-3 bg-orange-400 rounded-full inline-block" /> Ravitaillement</span>
-                </div>
-              </div>
-
-              {niveauLoading ? (
-                <div className="flex justify-center py-16"><div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" /></div>
-              ) : niveauData?.niveauData?.length > 0 ? (
-                <div className="h-[260px] cursor-pointer">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={niveauData.niveauData} margin={{ left: 0, right: 10, top: 10, bottom: 0 }} onClick={handleChartClick}>
-                      <defs>
-                        <linearGradient id="niveauGrad" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="0%" stopColor="#3b82f6" stopOpacity={0.15} />
-                          <stop offset="100%" stopColor="#3b82f6" stopOpacity={0.02} />
-                        </linearGradient>
-                      </defs>
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#eef2f7" />
-                      <XAxis dataKey="heure" tick={{ fill: '#94a3b8', fontSize: 10, fontWeight: 600 }} axisLine={false} tickLine={false} interval="preserveStartEnd" />
-                      <YAxis tick={{ fill: '#94a3b8', fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={v => `${v} L`} />
-                      <Tooltip content={({ active, payload }) => {
-                        if (!active || !payload?.length) return null;
-                        const d = payload[0].payload;
+            {/* ── HISTORIQUE TAB: map + info bar + bar/line chart ── */}
+            {detailTab === 'historique' && (
+              <div style={{ marginBottom: '20px' }}>
+                {/* Map */}
+                <div style={{
+                  background: 'white', overflow: 'hidden',
+                  boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
+                }}>
+                  <div style={{ height: '400px' }}>
+                    {(() => {
+                      const lat = selPoint?.latitude ?? selRow.latGps ?? selRow.latRavit;
+                      const lng = selPoint?.longitude ?? selRow.lngGps ?? selRow.lngRavit;
+                      if (lat && lng) {
+                        const gpsPoints = niveauData?.niveauData || [];
                         return (
-                          <div className="bg-white rounded-xl shadow-lg border border-gray-100 px-4 py-3 text-sm">
-                            <p className="font-bold text-gray-700">{d.heure}</p>
-                            <p className="text-blue-500">Niveau: <b>{d.niveau} L</b></p>
-                            <p className="text-gray-400">Vitesse: {d.speed} km/h</p>
-                            {d.ravitaillement && <p className="text-orange-500 font-bold mt-1">⛽ Ravitaillement</p>}
-                            <p className="text-[10px] text-gray-300 mt-1">Cliquez pour voir sur la carte</p>
-                          </div>
+                          <MapContainer key={`${lat}-${lng}`} center={[lat, lng]} zoom={14}
+                            className="h-full w-full" style={{ height: '100%', width: '100%' }}>
+                            <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>' />
+                            <FlyToPoint position={[lat, lng]} />
+                            {gpsPoints.map((pt, idx) => {
+                              const isSelected =
+                                selPoint &&
+                                String(selPoint.timestamp) === String(pt.timestamp) &&
+                                Number(selPoint.latitude) === Number(pt.latitude) &&
+                                Number(selPoint.longitude) === Number(pt.longitude);
+
+                              return (
+                                <CircleMarker
+                                  key={`gps-${pt.timestamp || idx}`}
+                                  center={[pt.latitude, pt.longitude]}
+                                  radius={isSelected ? 7 : 4}
+                                  pathOptions={{
+                                    color: isSelected ? '#c2410c' : '#f97316',
+                                    fillColor: isSelected ? '#fb923c' : '#fdba74',
+                                    fillOpacity: isSelected ? 0.95 : 0.75,
+                                    weight: isSelected ? 2 : 1,
+                                  }}
+                                >
+                                  <Popup>
+                                    <div style={{ fontSize: '13px', fontFamily: "'Inter', sans-serif" }}>
+                                      <p style={{ fontWeight: 700 }}>📍 Point GPS {pt.heure}</p>
+                                      <p>Fuel: <strong>{pt.niveau} L</strong></p>
+                                      <p>
+                                        Etat moteur:{' '}
+                                        <strong style={{ color: getEtatMoteurInfo(pt).color }}>
+                                          {getEtatMoteurInfo(pt).label}
+                                        </strong>
+                                      </p>
+                                      <p style={{ color: '#6b7280' }}>
+                                        Lat: {Number(pt.latitude).toFixed(5)} | Lng: {Number(pt.longitude).toFixed(5)}
+                                      </p>
+                                    </div>
+                                  </Popup>
+                                </CircleMarker>
+                              );
+                            })}
+                            {selRow.latRavit && selRow.lngRavit && (
+                              <Marker position={[selRow.latRavit, selRow.lngRavit]} icon={createStationIcon()}>
+                                <Popup>
+                                  <div style={{ fontSize: '13px', fontFamily: "'Inter', sans-serif" }}>
+                                    <p style={{ fontWeight: 700 }}>⛽ Station</p>
+                                    <p>{selRow.lieu}</p>
+                                  </div>
+                                </Popup>
+                              </Marker>
+                            )}
+                            {selPoint && (
+                              <Marker position={[selPoint.latitude, selPoint.longitude]} icon={createTruckIcon()}>
+                                <Popup>
+                                  <div style={{ fontSize: '13px', fontFamily: "'Inter', sans-serif" }}>
+                                    <p style={{ fontWeight: 700 }}>🚛 {selRow.camion}</p>
+                                    <p style={{ color: '#f97316' }}>⏰ {selPoint.heure} · {selPoint.niveau} L</p>
+                                    <p>
+                                      ⚙ Etat moteur:{' '}
+                                      <strong style={{ color: getEtatMoteurInfo(selPoint).color }}>
+                                        {getEtatMoteurInfo(selPoint).label}
+                                      </strong>
+                                    </p>
+                                    <p style={{ color: '#6b7280' }}>
+                                      📍 {Number(selPoint.latitude).toFixed(5)}, {Number(selPoint.longitude).toFixed(5)}
+                                    </p>
+                                  </div>
+                                </Popup>
+                              </Marker>
+                            )}
+                            {!selPoint && (
+                              <Marker position={[lat, lng]} icon={selRow.latGps ? createTruckIcon() : createStationIcon()}>
+                                <Popup>
+                                  <div style={{ fontSize: '13px', fontFamily: "'Inter', sans-serif" }}>
+                                    <p style={{ fontWeight: 700 }}>{selRow.camion}</p>
+                                    <p>{selRow.lieu}</p>
+                                  </div>
+                                </Popup>
+                              </Marker>
+                            )}
+                          </MapContainer>
                         );
-                      }} />
-                      <Area type="monotone" dataKey="niveau" stroke="none" fill="url(#niveauGrad)" />
-                      <Line type="monotone" dataKey="niveau" stroke="#3b82f6" strokeWidth={2.5}
-                        dot={props => {
-                          const { cx, cy, payload } = props;
-                          const isSelected = selPoint?.heure === payload.heure;
-                          const isRavit = payload.ravitaillement;
-                          return (
-                            <circle key={`dot-${payload.heure}`} cx={cx} cy={cy}
-                              r={isSelected ? 7 : isRavit ? 6 : 3}
-                              fill={isRavit ? '#f59e0b' : '#3b82f6'}
-                              stroke={isSelected ? '#1e40af' : 'white'}
-                              strokeWidth={isSelected ? 3 : isRavit ? 2 : 1.5}
-                              style={{ cursor: 'pointer' }} />
-                          );
-                        }}
-                        activeDot={{ r: 6, stroke: '#3b82f6', strokeWidth: 2, fill: 'white' }} />
-                    </LineChart>
-                  </ResponsiveContainer>
-                </div>
-              ) : (
-                <div className="flex flex-col items-center justify-center py-16 text-gray-300">
-                  <FiTruck className="text-5xl mb-3" />
-                  <p className="font-medium text-sm">Aucune donnée GPS pour cette date</p>
-                </div>
-              )}
-            </div>
-
-            {/* ── Bottom info bar ── */}
-            <div className="px-6 pb-2 flex items-center gap-6 text-xs text-gray-500 border-t border-gray-100 pt-3">
-              <span className="font-bold inline-flex items-center gap-1">🚛 Immatriculation : {selRow.camion}</span>
-              <span className="font-bold inline-flex items-center gap-1">⛽ Qté GPS en L : {selRow.qttGps}</span>
-            </div>
-
-            {/* ── Position GPS + Ticket ── */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-px bg-gray-100 border-t border-gray-100">
-
-              {/* Position GPS */}
-              <div className="bg-white p-5">
-                <h4 className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-3">Position GPS Ravitaillement</h4>
-                <div className="h-[220px] rounded-xl overflow-hidden border border-gray-200">
-                  {(() => {
-                    const lat = selPoint?.latitude ?? selRow.latGps ?? selRow.latRavit;
-                    const lng = selPoint?.longitude ?? selRow.lngGps ?? selRow.lngRavit;
-                    if (lat && lng) {
+                      }
                       return (
-                        <MapContainer key={`${lat}-${lng}`} center={[lat, lng]} zoom={14}
-                          className="h-full w-full" style={{ height: '100%', width: '100%' }}>
-                          <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>' />
-                          <FlyToPoint position={[lat, lng]} />
-                          <Marker position={[lat, lng]} icon={selPoint ? createTruckIcon() : createStationIcon()}>
-                            <Popup>
-                              <div className="text-sm">
-                                <p className="font-bold">{selRow.camion}</p>
-                                <p>{selRow.lieu}</p>
-                                {selPoint && <p className="text-blue-500">⏰ {selPoint.heure} · {selPoint.speed} km/h</p>}
-                              </div>
-                            </Popup>
-                          </Marker>
-                        </MapContainer>
+                        <div className="flex flex-col items-center justify-center" style={{ height: '100%', color: '#d1d5db', background: '#fafbfc' }}>
+                          <FiMapPin style={{ fontSize: '40px', marginBottom: '12px' }} />
+                          <p style={{ fontSize: '14px', fontWeight: 600 }}>Position GPS non disponible</p>
+                        </div>
                       );
-                    }
-                    return (
-                      <div className="flex flex-col items-center justify-center h-full text-gray-300">
-                        <FiMapPin className="text-3xl mb-2" />
-                        <p className="text-xs">Position non disponible</p>
-                      </div>
-                    );
-                  })()}
-                </div>
-              </div>
+                    })()}
+                  </div>
 
-              {/* Ticket / Référence */}
-              <div className="bg-white p-5">
-                <h4 className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-3">Ticket / Référence</h4>
-                <div className="space-y-3">
-                  <div className="flex justify-between border-b border-gray-50 pb-2">
-                    <span className="text-xs text-gray-400">Station</span>
-                    <span className="text-xs font-bold text-gray-700">{selRow.lieu}</span>
+                  {/* Orange info bar */}
+                  <div className="flex items-center gap-6" style={{
+                    background: '#f97316', padding: '12px 20px', color: 'white', fontSize: '13px', fontWeight: 600,
+                  }}>
+                    <span className="flex items-center gap-2">
+                      <FiTruck /> Immatriculation <strong style={{ fontWeight: 800 }}>{selectedCamion}</strong>
+                    </span>
+                    <span className="flex items-center gap-2">
+                      <FiCalendar /> {dateStart}
+                    </span>
+                    <span className="flex items-center gap-2">
+                      <FiCalendar /> {dateEnd}
+                    </span>
                   </div>
-                  <div className="flex justify-between border-b border-gray-50 pb-2">
-                    <span className="text-xs text-gray-400">Date</span>
-                    <span className="text-xs font-bold text-gray-700">{selRow.date}</span>
-                  </div>
-                  <div className="flex justify-between border-b border-gray-50 pb-2">
-                    <span className="text-xs text-gray-400">Heure</span>
-                    <span className="text-xs font-bold text-gray-700">{selRow.heure}</span>
-                  </div>
-                  <div className="flex justify-between border-b border-gray-50 pb-2">
-                    <span className="text-xs text-gray-400">Qté Déclarée</span>
-                    <span className="text-xs font-bold text-gray-700">{selRow.qttDeclaree} L</span>
-                  </div>
-                  <div className="flex justify-between border-b border-gray-50 pb-2">
-                    <span className="text-xs text-gray-400">Qté GPS</span>
-                    <span className="text-xs font-bold text-teal-600">{selRow.qttGps} L</span>
-                  </div>
-                  <div className="flex justify-between border-b border-gray-50 pb-2">
-                    <span className="text-xs text-gray-400">Prix</span>
-                    <span className="text-xs font-bold text-gray-700">{selRow.prix > 0 ? `${selRow.prix.toFixed(2)} DT` : '—'}</span>
-                  </div>
-                  <div className="flex justify-between border-b border-gray-50 pb-2">
-                    <span className="text-xs text-gray-400">Type</span>
-                    <span className="text-xs font-bold text-gray-700">{selRow.type}</span>
-                  </div>
-                  {selRow.capacite && (
-                    <div className="flex justify-between border-b border-gray-50 pb-2">
-                      <span className="text-xs text-gray-400">Capacité réservoir</span>
-                      <span className="text-xs font-bold text-gray-700">{selRow.capacite} L</span>
+                </div>
+
+                {/* Bar + Line chart */}
+                <div style={{
+                  background: 'white', padding: '24px',
+                  boxShadow: '0 1px 3px rgba(0,0,0,0.04)', borderRadius: '0 0 16px 16px',
+                }}>
+                  {niveauLoading ? (
+                    <div className="flex justify-center" style={{ padding: '60px 0' }}>
+                      <div style={{ width: '36px', height: '36px', border: '4px solid #f97316', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+                    </div>
+                  ) : niveauData?.niveauData?.length > 0 ? (
+                    <>
+                      <div style={{ height: '280px', cursor: 'pointer' }}>
+                        <ResponsiveContainer width="100%" height="100%">
+                          <ComposedChart data={niveauData.niveauData} margin={{ left: 0, right: 10, top: 10, bottom: 0 }} onClick={handleChartClick}>
+                            <defs>
+                              <linearGradient id="barGrad2" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="0%" stopColor="#fdba74" stopOpacity={0.9} />
+                                <stop offset="100%" stopColor="#fed7aa" stopOpacity={0.5} />
+                              </linearGradient>
+                            </defs>
+                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f3f4f6" />
+                            <XAxis
+                              dataKey="heure"
+                              tick={{ fill: '#94a3b8', fontSize: 9, fontWeight: 600, fontFamily: 'Inter' }}
+                              axisLine={false} tickLine={false}
+                              interval="preserveStartEnd"
+                              angle={-45}
+                              textAnchor="end"
+                              height={50}
+                            />
+                            <YAxis
+                              tick={{ fill: '#94a3b8', fontSize: 10, fontFamily: 'Inter' }}
+                              axisLine={false} tickLine={false}
+                            />
+                            <Tooltip content={({ active, payload }) => {
+                              if (!active || !payload?.length) return null;
+                              const d = payload[0]?.payload;
+                              if (!d) return null;
+                              return (
+                                <div style={{
+                                  background: 'white', borderRadius: '10px', boxShadow: '0 4px 20px rgba(0,0,0,0.1)',
+                                  border: '1px solid #f3f4f6', padding: '10px 14px', fontSize: '13px', fontFamily: "'Inter', sans-serif",
+                                }}>
+                                  <p style={{ fontWeight: 700, color: '#374151', marginBottom: '4px' }}>{d.timestamp ? new Date(d.timestamp).toLocaleString('fr-FR') : d.heure}</p>
+                                  <p style={{ color: '#f97316' }}>Litres : <b>{d.niveau} L</b></p>
+                                  <p style={{ color: '#ef4444' }}>Niveau carburant US : <b>{d.con ?? '—'}</b></p>
+                                  <p style={{ color: getEtatMoteurInfo(d).color }}>Etat moteur : <b>{getEtatMoteurInfo(d).label}</b></p>
+                                  <p style={{ color: '#6b7280' }}>
+                                    Lat: {Number(d.latitude).toFixed(5)} | Lng: {Number(d.longitude).toFixed(5)}
+                                  </p>
+                                  {d.ravitaillement && <p style={{ color: '#f97316', fontWeight: 700, marginTop: '4px' }}>⛽ Ravitaillement détecté</p>}
+                                  <p style={{ fontSize: '10px', color: '#9ca3af', marginTop: '4px' }}>Cliquez pour voir sur la carte</p>
+                                </div>
+                              );
+                            }} />
+                            {/* Orange bars — fuel level (Litres) */}
+                            <Bar
+                              dataKey="niveau"
+                              fill="url(#barGrad2)"
+                              radius={[2, 2, 0, 0]}
+                              name="Litres"
+                            />
+                            {/* Red line — consumption / engine state */}
+                            <Line
+                              type="monotone"
+                              dataKey="con"
+                              stroke="#ef4444"
+                              strokeWidth={2}
+                              dot={{ r: 2.5, fill: '#ef4444', stroke: 'white', strokeWidth: 1 }}
+                              name="Niveau carburant US"
+                            />
+                          </ComposedChart>
+                        </ResponsiveContainer>
+                      </div>
+                      {/* Legend */}
+                      <div className="flex items-center justify-center gap-8" style={{ marginTop: '16px', fontSize: '12px', color: '#6b7280' }}>
+                        <span className="flex items-center gap-2">
+                          <span style={{ width: '16px', height: '12px', background: '#fdba74', borderRadius: '2px', display: 'inline-block' }} />
+                          Litres
+                        </span>
+                        <span className="flex items-center gap-2">
+                          <span style={{ width: '16px', height: '2px', background: '#ef4444', display: 'inline-block', position: 'relative' }}>
+                            <span style={{ position: 'absolute', top: '-3px', left: '6px', width: '5px', height: '5px', borderRadius: '50%', background: '#ef4444', border: '1px solid white' }} />
+                          </span>
+                          <span style={{ marginLeft: '4px' }}>Niveau carburant US</span>
+                        </span>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="flex flex-col items-center justify-center" style={{ padding: '60px 0', color: '#d1d5db' }}>
+                      <FiTruck style={{ fontSize: '48px', marginBottom: '12px' }} />
+                      <p style={{ fontWeight: 600, fontSize: '14px' }}>Aucune donnée GPS pour cette période</p>
                     </div>
                   )}
-
                 </div>
               </div>
-            </div>
+            )}
 
+            {/* ── INFORMATIONS TAB ── */}
+            {detailTab === 'informations' && (
+              <div style={{
+                background: 'white', borderRadius: '0 0 16px 16px', padding: '24px', marginBottom: '20px',
+                boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
+              }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1px', background: '#f3f4f6', borderRadius: '12px', overflow: 'hidden' }}>
+                  <div style={{ background: 'white', padding: '20px' }}>
+                    <p style={{ fontSize: '10px', fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '8px' }}>Immatriculation</p>
+                    <p style={{ fontSize: '17px', fontWeight: 800, color: '#1a1a2e' }}>{selRow.camion}</p>
+                  </div>
+                  <div style={{ background: 'white', padding: '20px' }}>
+                    <p style={{ fontSize: '10px', fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '8px' }}>Qté GPS</p>
+                    <p style={{ fontSize: '17px', fontWeight: 800, color: '#10b981' }}>▲ {selRow.qttGps} L</p>
+                  </div>
+                  <div style={{ background: 'white', padding: '20px' }}>
+                    <p style={{ fontSize: '10px', fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '8px' }}>Qté Déclarée</p>
+                    <p style={{ fontSize: '17px', fontWeight: 800, color: '#f97316' }}>{selRow.qttDeclaree} L</p>
+                  </div>
+                  <div style={{ background: 'white', padding: '20px' }}>
+                    <p style={{ fontSize: '10px', fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '8px' }}>Écart</p>
+                    <p style={{ fontSize: '17px', fontWeight: 800, color: selRow.ecart === 0 ? '#10b981' : '#ef4444' }}>
+                      {selRow.ecart > 0 ? '+' : ''}{selRow.ecart} L
+                    </p>
+                    {selRow.statut === 'conforme'
+                      ? <span style={{ fontSize: '10px', fontWeight: 700, color: '#10b981', background: '#ecfdf5', padding: '2px 8px', borderRadius: '6px' }}>✅ Conforme</span>
+                      : <span style={{ fontSize: '10px', fontWeight: 700, color: '#ef4444', background: '#fef2f2', padding: '2px 8px', borderRadius: '6px' }}>🚩 Fraude probable</span>
+                    }
+                  </div>
+                </div>
+                <div style={{ marginTop: '16px' }}>
+                  {[
+                    { label: 'Station', value: selRow.lieu },
+                    { label: 'Date', value: selRow.date },
+                    { label: 'Heure', value: selRow.heure },
+                    { label: 'Type', value: selRow.type },
+                    { label: 'Prix', value: selRow.prix > 0 ? `${selRow.prix.toFixed(2)} DT` : '—' },
+                    ...(selRow.capacite ? [{ label: 'Capacité réservoir', value: `${selRow.capacite} L` }] : []),
+                  ].map((item, idx) => (
+                    <div key={idx} className="flex justify-between" style={{ padding: '10px 0', borderBottom: '1px solid #f9fafb' }}>
+                      <span style={{ fontSize: '12px', color: '#9ca3af', fontWeight: 500 }}>{item.label}</span>
+                      <span style={{ fontSize: '12px', fontWeight: 700, color: '#374151' }}>{item.value}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }

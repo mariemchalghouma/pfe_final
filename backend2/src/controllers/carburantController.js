@@ -2,6 +2,40 @@ import pool from '../config/database.js';
 
 const toNum = (v) => (v != null ? Number(v) : null);
 
+const getEtatMoteurFromCon = (con) => {
+  if (con == null) return 'inconnu';
+
+  if (typeof con === 'number') {
+    if (Number.isNaN(con)) return 'inconnu';
+    return con > 0 ? 'en_route' : 'arrete';
+  }
+
+  const asNumber = Number(con);
+  if (!Number.isNaN(asNumber)) {
+    return asNumber > 0 ? 'en_route' : 'arrete';
+  }
+
+  const normalized = String(con).trim().toLowerCase();
+  if (!normalized) return 'inconnu';
+
+  if (
+    normalized === 'en_route' || normalized === 'enroute' || normalized === 'route' ||
+    normalized === 'moving' || normalized === 'driving' || normalized === 'on' ||
+    normalized === 'true' || normalized === 'start'
+  ) {
+    return 'en_route';
+  }
+
+  if (
+    normalized === 'arrete' || normalized === 'arret' || normalized === 'stop' ||
+    normalized === 'stopped' || normalized === 'off' || normalized === 'false'
+  ) {
+    return 'arrete';
+  }
+
+  return 'inconnu';
+};
+
 /* ═══════════════════════════════════════════════════════════════════
    1. getEcartCarburant
       Recherche les ravitaillements d'un camion sur une plage de dates.
@@ -168,13 +202,16 @@ export const getNiveauCarburant = async (camion, { date, dateStart, dateEnd }) =
       const ts    = new Date(pt.gps_dt);
       const heure = `${String(ts.getHours()).padStart(2, '0')}:${String(ts.getMinutes()).padStart(2, '0')}`;
       const fuel  = toNum(pt.fuel) || 0;
+      const etatMoteur = getEtatMoteurFromCon(pt.con);
 
       return {
         heure,
         niveau:    Math.round(fuel * 10) / 10,
         latitude:  Number(pt.latitude),
         longitude: Number(pt.longitude),
-        con:       toNum(pt.con) || 0,
+        con:       toNum(pt.con),
+        conRaw:    pt.con,
+        etatMoteur,
         speed:     0,   // pas de vitesse dans mesure – on garde la clé pour le front
         timestamp: pt.gps_dt,
         ravitaillement: ravitHours.has(ts.getHours()),

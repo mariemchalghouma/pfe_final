@@ -19,6 +19,15 @@ const formatDureeMinutes = (minutes) => {
     return `${Math.round(totalMinutes)} min`;
 };
 
+const EmptyDoorIcon = () => (
+    <svg width="44" height="44" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M7.5 3.5L13.5 2.5C14.2 2.4 14.8 2.9 14.8 3.6V20.3C14.8 20.9 14.2 21.4 13.5 21.3L7.5 20.3V3.5Z" stroke="#F97316" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+        <path d="M14.8 4.5H17.5C18.3 4.5 19 5.2 19 6V18C19 18.8 18.3 19.5 17.5 19.5H14.8" stroke="#F97316" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+        <circle cx="11.2" cy="11.8" r="0.8" fill="#F97316"/>
+        <path d="M5 20.5H19.5" stroke="#F97316" strokeWidth="1.8" strokeLinecap="round"/>
+    </svg>
+);
+
 const OuverturePorte = () => {
     const [ouverturesData, setOuverturesData] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -34,11 +43,55 @@ const OuverturePorte = () => {
     const [isMapOpen, setIsMapOpen] = useState(false);
     const [mapPositions, setMapPositions] = useState([]);
 
+    const getDateRangeParams = () => {
+        const today = new Date().toISOString().split('T')[0];
+
+        if (dateFilterMode === 'day') {
+            const day = filterDate || today;
+            return { dateStart: day, dateEnd: day };
+        }
+
+        if (dateFilterMode === 'range') {
+            return {
+                dateStart: filterStartDate || today,
+                dateEnd: filterEndDate || filterStartDate || today,
+            };
+        }
+
+        if (dateFilterMode === 'week' && filterWeek) {
+            const [year, week] = filterWeek.split('-W').map(Number);
+            const firstDayOfYear = new Date(Date.UTC(year, 0, 1));
+            const firstWeekDayOffset = (firstDayOfYear.getUTCDay() || 7) - 1;
+            const weekStart = new Date(firstDayOfYear);
+            weekStart.setUTCDate(firstDayOfYear.getUTCDate() - firstWeekDayOffset + (week - 1) * 7);
+            const weekEnd = new Date(weekStart);
+            weekEnd.setUTCDate(weekStart.getUTCDate() + 6);
+
+            return {
+                dateStart: weekStart.toISOString().split('T')[0],
+                dateEnd: weekEnd.toISOString().split('T')[0],
+            };
+        }
+
+        if (dateFilterMode === 'month' && filterMonth) {
+            const [y, m] = filterMonth.split('-').map(Number);
+            const monthStart = new Date(Date.UTC(y, m - 1, 1));
+            const monthEnd = new Date(Date.UTC(y, m, 0));
+            return {
+                dateStart: monthStart.toISOString().split('T')[0],
+                dateEnd: monthEnd.toISOString().split('T')[0],
+            };
+        }
+
+        return { dateStart: today, dateEnd: today };
+    };
+
     useEffect(() => {
         const fetchOuvertures = async () => {
             try {
                 setLoading(true);
-                const response = await ouverturesAPI.getOuvertures();
+                const { dateStart, dateEnd } = getDateRangeParams();
+                const response = await ouverturesAPI.getOuvertures({ dateStart, dateEnd });
                 const ouvertures = response.data || [];
 
                 const formattedData = ouvertures.map((item, index) => {
@@ -84,7 +137,7 @@ const OuverturePorte = () => {
         };
 
         fetchOuvertures();
-    }, []);
+    }, [dateFilterMode, filterDate, filterStartDate, filterEndDate, filterWeek, filterMonth]);
 
     const filteredData = useMemo(() => {
         const getWeekNumber = (dateValue) => {
@@ -246,43 +299,45 @@ const OuverturePorte = () => {
                     </div>
                 </div>
 
-                <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm mb-8">
-                    <h3 className="text-[11px] font-bold text-gray-400 uppercase tracking-[0.1em] mb-6">
-                        OUVERTURES PAR DATE — CONFORME VS NON CONFORME
-                    </h3>
-                    <div className="h-[110px] w-full">
-                        <ResponsiveContainer width="100%" height="100%">
-                            <LineChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                                <XAxis dataKey="date" tick={{ fill: '#94a3b8', fontSize: 11, fontWeight: 600 }} axisLine={false} tickLine={false} />
-                                <YAxis tick={{ fill: '#cbd5e1', fontSize: 10, fontWeight: 500 }} axisLine={false} tickLine={false} width={32} />
-                                <Tooltip cursor={{ fill: 'rgba(241,245,249,0.35)' }} contentStyle={{ borderRadius: '10px', border: '1px solid #e2e8f0', fontSize: 12 }} />
-                                <Line
-                                    type="monotone"
-                                    dataKey="conforme"
-                                    name="Conforme"
-                                    stroke="#46B519"
-                                    strokeWidth={2}
-                                    dot={{ r: 4, fill: '#46B519', strokeWidth: 2, stroke: '#fff' }}
-                                    activeDot={{ r: 6 }}
-                                />
-                                <Line
-                                    type="monotone"
-                                    dataKey="non_conforme"
-                                    name="Non conforme"
-                                    stroke="#FF4B50"
-                                    strokeWidth={2}
-                                    dot={{ r: 4, fill: '#FF4B50', strokeWidth: 2, stroke: '#fff' }}
-                                    activeDot={{ r: 6 }}
-                                />
-                            </LineChart>
-                        </ResponsiveContainer>
+                {filteredData.length > 0 && (
+                    <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm mb-8">
+                        <h3 className="text-[11px] font-bold text-gray-400 uppercase tracking-[0.1em] mb-6">
+                            OUVERTURES PAR DATE — CONFORME VS NON CONFORME
+                        </h3>
+                        <div className="h-[110px] w-full">
+                            <ResponsiveContainer width="100%" height="100%">
+                                <LineChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                                    <XAxis dataKey="date" tick={{ fill: '#94a3b8', fontSize: 11, fontWeight: 600 }} axisLine={false} tickLine={false} />
+                                    <YAxis tick={{ fill: '#cbd5e1', fontSize: 10, fontWeight: 500 }} axisLine={false} tickLine={false} width={32} />
+                                    <Tooltip cursor={{ fill: 'rgba(241,245,249,0.35)' }} contentStyle={{ borderRadius: '10px', border: '1px solid #e2e8f0', fontSize: 12 }} />
+                                    <Line
+                                        type="monotone"
+                                        dataKey="conforme"
+                                        name="Conforme"
+                                        stroke="#46B519"
+                                        strokeWidth={2}
+                                        dot={{ r: 4, fill: '#46B519', strokeWidth: 2, stroke: '#fff' }}
+                                        activeDot={{ r: 6 }}
+                                    />
+                                    <Line
+                                        type="monotone"
+                                        dataKey="non_conforme"
+                                        name="Non conforme"
+                                        stroke="#FF4B50"
+                                        strokeWidth={2}
+                                        dot={{ r: 4, fill: '#FF4B50', strokeWidth: 2, stroke: '#fff' }}
+                                        activeDot={{ r: 6 }}
+                                    />
+                                </LineChart>
+                            </ResponsiveContainer>
+                        </div>
+                        <div className="mt-4 flex items-center justify-center gap-8 text-sm font-semibold text-gray-500">
+                            <span className="inline-flex items-center gap-2"><span className="w-4 h-4 rounded-full bg-[#46B519]" /> CONFORME</span>
+                            <span className="inline-flex items-center gap-2"><span className="w-4 h-4 rounded-full bg-[#FF4B50]" /> NON CONFORME</span>
+                        </div>
                     </div>
-                    <div className="mt-4 flex items-center justify-center gap-8 text-sm font-semibold text-gray-500">
-                        <span className="inline-flex items-center gap-2"><span className="w-4 h-4 rounded-full bg-[#46B519]" /> CONFORME</span>
-                        <span className="inline-flex items-center gap-2"><span className="w-4 h-4 rounded-full bg-[#FF4B50]" /> NON CONFORME</span>
-                    </div>
-                </div>
+                )}
 
                 <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden min-h-[500px]">
                     <div className="overflow-x-auto">
@@ -355,9 +410,15 @@ const OuverturePorte = () => {
                     </div>
 
                     {filteredData.length === 0 && !loading && (
-                        <div className="flex flex-col items-center justify-center py-20 bg-gray-50/30">
-                            <FiFilter className="text-5xl text-gray-200 mb-4" />
-                            <p className="text-gray-400 font-medium">Aucune ouverture de porte ne correspond aux critères de recherche.</p>
+                        <div className="flex flex-col items-center justify-center py-24 bg-gray-50/30 text-center">
+                            <div className="w-24 h-24 rounded-3xl bg-orange-50 flex items-center justify-center mb-7">
+                                <EmptyDoorIcon />
+                            </div>
+                            <h3 className="text-4xl font-extrabold text-gray-900 mb-4">Aucun evenement trouve</h3>
+                            <p className="text-gray-500 text-lg leading-relaxed max-w-xl">
+                                Aucune donnee ne correspond a la date selectionnee.<br />
+                                Modifiez les filtres ou choisissez une autre date.
+                            </p>
                         </div>
                     )}
                     {loading && (

@@ -4,6 +4,7 @@ import { createContext, useContext } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
+import { canAccessPath } from '@/utils/permissions';
 import {
     FiGrid, FiTruck, FiStopCircle, FiUnlock,
     FiDroplet, FiMapPin,
@@ -25,7 +26,7 @@ const Sidebar = () => {
     const { isCollapsed, toggleCollapsed } = useSidebar();
     const pathname = usePathname();
     const router = useRouter();
-    const { logout } = useAuth();
+    const { logout, user } = useAuth();
 
     const mainMenu = [
         { name: 'Dashboard', path: '/dashboard', icon: FiGrid },
@@ -86,14 +87,14 @@ const Sidebar = () => {
 
             {/* Main Menu */}
             <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
-                {mainMenu.map((item) => (
+                {mainMenu.filter((item) => canAccessPath(user, item.path)).map((item) => (
                     <MenuItem key={item.path} item={item} />
                 ))}
 
                 {/* Separator */}
                 <div className="my-4 border-t border-gray-100"></div>
 
-                {secondaryMenu.map((item) => (
+                {secondaryMenu.filter((item) => canAccessPath(user, item.path)).map((item) => (
                     <MenuItem key={item.path} item={item} />
                 ))}
             </nav>

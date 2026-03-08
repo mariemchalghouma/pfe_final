@@ -7,7 +7,9 @@ export async function GET(request) {
 
   const { searchParams } = new URL(request.url);
   const date = searchParams.get('date');
+  const dateStart = searchParams.get('dateStart');
+  const dateEnd = searchParams.get('dateEnd');
   const camion = searchParams.get('camion');
-  return getOuvertures(date, camion);
+  return getOuvertures({ date, dateStart, dateEnd, camion });
 }
 

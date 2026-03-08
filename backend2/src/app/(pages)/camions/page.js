@@ -1,8 +1,8 @@
 'use client';
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { FiSearch, FiMapPin, FiArrowLeft, FiBarChart2, FiList, FiCalendar, FiClock, FiUser, FiTruck } from 'react-icons/fi';
-import { FaGasPump, FaTachometerAlt, FaThermometerHalf, FaRoad, FaWarehouse, FaUserTie, FaParking, FaExclamationTriangle } from 'react-icons/fa';
+import { FiSearch, FiBarChart2, FiCalendar, FiClock, FiUser, FiTruck } from 'react-icons/fi';
+import { FaGasPump, FaWarehouse, FaUserTie, FaParking, FaExclamationTriangle } from 'react-icons/fa';
 import { camionsAPI } from '@/services/api';
 import { useMapContext } from '@/context/MapContext';
 import { reverseGeocode } from '@/services/geocoding';
@@ -202,12 +202,8 @@ const Camions = () => {
     const [addresses, setAddresses] = useState(new Map());
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
-    const [search, setSearch] = useState('');
-    const [selectedCamionPlaque, setSelectedCamionPlaque] = useState(null);
-    const [trajet, setTrajet] = useState([]);
 
     // Gantt state
-    const [viewMode, setViewMode] = useState('list'); // 'list' | 'gantt'
     const [ganttData, setGanttData] = useState([]);
     const [ganttDate, setGanttDate] = useState(new Date().toISOString().split('T')[0]);
     const [ganttLoading, setGanttLoading] = useState(false);
@@ -278,8 +274,8 @@ const Camions = () => {
     }, []);
 
     useEffect(() => {
-        if (viewMode === 'gantt') loadGantt(ganttDate);
-    }, [viewMode, ganttDate, loadGantt]);
+        loadGantt(ganttDate);
+    }, [ganttDate, loadGantt]);
 
     // Group gantt data by voyage (PLAMOTI + VOYCLE) — no longer needed, controller already groups
     const filteredGantt = useMemo(() => {
@@ -332,18 +328,7 @@ const Camions = () => {
         }
     }, [setPolylines]);
 
-    const filteredCamions = camions.filter(
-        (c) =>
-            String(c.plaque || '').toLowerCase().includes(search.toLowerCase()) ||
-            String(c.chauffeur || '').toLowerCase().includes(search.toLowerCase()) ||
-            String(c.localisation || '').toLowerCase().includes(search.toLowerCase())
-    );
-
-    const selectedCamion = camions.find((c) => c.plaque === selectedCamionPlaque);
-
     const handleSelectCamion = async (camion) => {
-        setSelectedCamionPlaque(camion.plaque);
-
         if (camion.lat != null && camion.lng != null) {
             if (!addresses.has(camion.plaque)) {
                 const address = await reverseGeocode(camion.lat, camion.lng);
@@ -357,13 +342,6 @@ const Camions = () => {
         loadTrajet(camion.plaque);
     };
 
-    const handleBackToList = () => {
-        setSelectedCamionPlaque(null);
-        setFlyTo(null);
-        setTrajet([]);
-        setPolylines([]);
-    };
-
     /* ═══ hours axis for gantt ═══ */
     const hours = Array.from({ length: 25 }, (_, i) => i);
 
@@ -374,22 +352,15 @@ const Camions = () => {
                 {/* ── View mode toggle ── */}
                 <div className="flex items-center justify-between px-4 pt-4 pb-2 border-b border-gray-100 bg-white">
                     <h2 className="text-xl font-bold text-gray-800">Camions</h2>
-                    <div className="flex bg-gray-100 p-1 rounded-xl">
-                        <button onClick={() => { setViewMode('list'); setSelectedCamionPlaque(null); }}
-                            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all inline-flex items-center gap-1.5 ${viewMode === 'list' ? 'bg-white text-orange-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
-                            <FiList className="text-sm" /> Liste
-                        </button>
-                        <button onClick={() => setViewMode('gantt')}
-                            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all inline-flex items-center gap-1.5 ${viewMode === 'gantt' ? 'bg-white text-orange-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
-                            <FiBarChart2 className="text-sm" /> Gantt
-                        </button>
+                    <div className="px-3 py-1.5 rounded-lg text-xs font-bold inline-flex items-center gap-1.5 bg-orange-50 text-orange-600 border border-orange-200">
+                        <FiBarChart2 className="text-sm" /> Gantt
                     </div>
                 </div>
 
-                {loading && viewMode === 'list' && (
+                {loading && (
                     <div className="p-6 text-center text-gray-500">Chargement des camions…</div>
                 )}
-                {error && !loading && viewMode === 'list' && (
+                {error && !loading && (
                     <div className="p-4 mx-4 mt-4 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm">
                         {error}
                         <button type="button" onClick={loadCamions} className="block mt-2 text-orange-600 font-medium hover:underline">Réessayer</button>
@@ -397,8 +368,7 @@ const Camions = () => {
                 )}
 
                 {/* ═══ GANTT VIEW ═══ */}
-                {viewMode === 'gantt' && (
-                    <div className="flex-1 overflow-y-auto px-4 py-3">
+                <div className="flex-1 overflow-y-auto px-4 py-3">
                         {/* Hint */}
                         <p className="text-sm text-gray-400 mb-3">Cliquez sur un camion pour voir son trajet →</p>
 
@@ -467,7 +437,7 @@ const Camions = () => {
                                             <GanttBar data={d} hoveredSegment={hoveredSegment} setHoveredSegment={setHoveredSegment}
                                                 onClickCamion={(plaque) => {
                                                     const cam = camions.find(c => c.plaque === plaque);
-                                                    if (cam) { setViewMode('list'); handleSelectCamion(cam); }
+                                                    if (cam) handleSelectCamion(cam);
                                                 }} />
                                         </div>
                                     ))}
@@ -482,182 +452,6 @@ const Camions = () => {
                             </div>
                         )}
                     </div>
-                )}
-
-                {/* ═══ LIST VIEW ═══ */}
-                {viewMode === 'list' && !loading && selectedCamion ? (
-                    <div className="flex-1 overflow-y-auto">
-                        <div className="px-4 pt-4 pb-2">
-                            <button
-                                onClick={handleBackToList}
-                                className="flex items-center gap-2 text-orange-500 hover:text-orange-600 text-sm font-medium transition-colors cursor-pointer"
-                            >
-                                <FiArrowLeft className="text-base" />
-                                Retour à la liste
-                            </button>
-                        </div>
-
-                        <div className="px-5 pb-4">
-                            <div className="flex items-center justify-between">
-                                <h2 className="text-xl font-bold text-gray-800">{selectedCamion.plaque}</h2>
-                                <span
-                                    className="px-3 py-1 rounded-full text-xs font-bold"
-                                    style={{
-                                        background: (statusConfig[selectedCamion.statut] || statusConfig.unknown).badgeBg,
-                                        color: (statusConfig[selectedCamion.statut] || statusConfig.unknown).badgeText,
-                                        border: `1.5px solid ${(statusConfig[selectedCamion.statut] || statusConfig.unknown).color}`
-                                    }}
-                                >
-                                    {(statusConfig[selectedCamion.statut] || statusConfig.unknown).label}
-                                </span>
-                            </div>
-                        </div>
-
-                        <div className="mx-5 mb-4 bg-gray-50 rounded-xl p-4 border border-gray-100">
-                            <table className="w-full text-sm">
-                                <tbody>
-                                    <tr className="border-b border-gray-100">
-                                        <td className="py-2 text-gray-500 font-medium">Chauffeur</td>
-                                        <td className="py-2 text-right text-gray-800 font-semibold">{selectedCamion.chauffeur}</td>
-                                    </tr>
-                                    <tr className="border-b border-gray-100">
-                                        <td className="py-2 text-gray-500 font-medium">Téléphone</td>
-                                        <td className="py-2 text-right text-gray-800 font-semibold">{selectedCamion.telephone}</td>
-                                    </tr>
-                                    <tr className="border-b border-gray-100">
-                                        <td className="py-2 text-gray-500 font-medium">Position</td>
-                                        <td className="py-2 text-right text-gray-800 font-semibold">
-                                            {selectedCamion.lat != null && selectedCamion.lng != null
-                                                ? (addresses.get(selectedCamion.plaque) || selectedCamion.localisation || `${selectedCamion.lat.toFixed(4)}, ${selectedCamion.lng.toFixed(4)}`)
-                                                : (selectedCamion.localisation || '—')}
-                                        </td>
-                                    </tr>
-                                    <tr>
-                                        <td className="py-2 text-gray-500 font-medium">Dernière MAJ</td>
-                                        <td className="py-2 text-right text-gray-800 font-semibold">{selectedCamion.derniereMaj}</td>
-                                    </tr>
-                                </tbody>
-                            </table>
-                        </div>
-
-                        <div className="mx-5 mb-4 grid grid-cols-2 gap-3">
-                            <div className="bg-gray-50 rounded-xl p-4 border border-gray-100 text-center">
-                                <FaTachometerAlt className="mx-auto text-2xl text-gray-400 mb-2" />
-                                <p className="text-xs text-gray-500 mb-1">Vitesse</p>
-                                <p className="text-xl font-bold text-gray-800">{selectedCamion.vitesse ?? '—'} <span className="text-sm font-normal text-gray-500">km/h</span></p>
-                            </div>
-                            <div className="bg-gray-50 rounded-xl p-4 border border-gray-100 text-center">
-                                <FaRoad className="mx-auto text-2xl text-orange-400 mb-2" />
-                                <p className="text-xs text-orange-500 mb-1">Kilométrage</p>
-                                <p className="text-xl font-bold text-orange-500">{(selectedCamion.kilometrage ?? 0).toLocaleString()} <span className="text-sm font-normal text-gray-500">km</span></p>
-                            </div>
-                            <div className="bg-gray-50 rounded-xl p-4 border border-gray-100 text-center">
-                                <FaGasPump className="mx-auto text-2xl text-gray-400 mb-2" />
-                                <p className="text-xs text-gray-500 mb-1">Carburant</p>
-                                <p className="text-xl font-bold text-gray-800">{selectedCamion.carburant != null ? `${selectedCamion.carburant}%` : '—'}</p>
-                            </div>
-                            <div className="bg-gray-50 rounded-xl p-4 border border-gray-100 text-center">
-                                <FaThermometerHalf className="mx-auto text-2xl text-gray-400 mb-2" />
-                                <p className="text-xs text-gray-500 mb-1">Temp. moteur</p>
-                                <p className="text-xl font-bold text-gray-800">{selectedCamion.tempMoteur != null ? `${selectedCamion.tempMoteur}°C` : '—'}</p>
-                            </div>
-                        </div>
-
-                        <div className="mx-5 mb-5 bg-gray-50 rounded-xl p-4 border border-gray-100">
-                            <h3 className="text-sm font-bold text-gray-700 mb-3">Diagnostics</h3>
-                            <div className="space-y-3 text-sm">
-                                <div className="flex justify-between items-center">
-                                    <span className="text-gray-500">Odomètre</span>
-                                    <span className="font-semibold text-gray-800">{(selectedCamion.kilometrage ?? 0).toLocaleString()} km</span>
-                                </div>
-                                {selectedCamion.carburant != null && (
-                                    <div>
-                                        <div className="flex justify-between items-center mb-1">
-                                            <span className="text-gray-500">Niveau carburant</span>
-                                            <span className="font-semibold text-gray-800">{selectedCamion.carburant}%</span>
-                                        </div>
-                                        <div className="w-full bg-gray-200 rounded-full h-2.5">
-                                            <div
-                                                className="h-2.5 rounded-full transition-all duration-500"
-                                                style={{
-                                                    width: `${Math.min(100, selectedCamion.carburant)}%`,
-                                                    background: selectedCamion.carburant > 50 ? '#22c55e' :
-                                                        selectedCamion.carburant > 20 ? '#f97316' : '#ef4444'
-                                                }}
-                                            ></div>
-                                        </div>
-                                    </div>
-                                )}
-                                <div className="flex justify-between items-center">
-                                    <span className="text-gray-500">GPS</span>
-                                    <span className="font-semibold text-gray-800">
-                                        {selectedCamion.lat != null && selectedCamion.lng != null
-                                            ? `${selectedCamion.lat}, ${selectedCamion.lng}`
-                                            : '—'}
-                                    </span>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                ) : viewMode === 'list' && !loading ? (
-                    <>
-                        <div className="p-4 border-b border-gray-100">
-                            <div className="relative">
-                                <FiSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                                <input
-                                    type="text"
-                                    placeholder="Rechercher (plaque, chauffeur, position)..."
-                                    value={search}
-                                    onChange={(e) => setSearch(e.target.value)}
-                                    className="w-full pl-10 pr-4 py-2.5 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-orange-400 focus:border-transparent"
-                                />
-                            </div>
-                            <p className="text-sm text-gray-400 mt-2">{filteredCamions.length} camion{filteredCamions.length !== 1 ? 's' : ''}</p>
-                        </div>
-
-                        <div className="flex-1 overflow-y-auto">
-                            {!loading && filteredCamions.length === 0 && (
-                                <div className="p-4 text-center text-gray-500 text-sm">Aucun camion à afficher.</div>
-                            )}
-                            {filteredCamions.map((camion) => {
-                                const config = statusConfig[camion.statut] || statusConfig.unknown;
-                                return (
-                                    <div
-                                        key={camion.plaque}
-                                        onClick={() => handleSelectCamion(camion)}
-                                        className="px-4 py-3 border-b border-gray-50 cursor-pointer transition-all hover:bg-orange-50"
-                                    >
-                                        <div className="flex items-center justify-between mb-1">
-                                            <span className="font-bold text-gray-800 text-sm">{camion.plaque}</span>
-                                            <span
-                                                className="px-2.5 py-0.5 rounded-full text-xs font-semibold"
-                                                style={{
-                                                    background: config.badgeBg,
-                                                    color: config.badgeText,
-                                                    border: `1px solid ${config.color}`
-                                                }}
-                                            >
-                                                {config.label}
-                                            </span>
-                                        </div>
-                                        <div className="flex items-center justify-between">
-                                            <span className="text-sm text-orange-500">{camion.chauffeur}</span>
-                                            <span className="text-sm text-gray-400">{camion.vitesse} km/h</span>
-                                        </div>
-                                        <div className="flex items-center gap-1 mt-1">
-                                            <FiMapPin className="text-gray-400 text-xs" />
-                                            <span className="text-xs text-gray-400">
-                                                {camion.lat != null && camion.lng != null
-                                                    ? (addresses.get(camion.plaque) || camion.localisation || `${camion.lat.toFixed(4)}, ${camion.lng.toFixed(4)}`)
-                                                    : (camion.localisation || '—')}
-                                            </span>
-                                        </div>
-                                    </div>
-                                );
-                            })}
-                        </div>
-                    </>
-                ) : null}
             </div>
         </div>
     );

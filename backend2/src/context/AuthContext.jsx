@@ -2,6 +2,7 @@
 
 import { createContext, useState, useContext, useEffect } from 'react';
 import { authAPI } from '@/services/api';
+import { isAdminUser, normalizeRoles } from '@/utils/permissions';
 
 const AuthContext = createContext(null);
 
@@ -21,7 +22,7 @@ export const AuthProvider = ({ children }) => {
     const checkAuth = async () => {
         try {
             const response = await authAPI.getMe();
-            setUser(response.data);
+            setUser({ ...response.data, roles: normalizeRoles(response.data?.roles) });
         } catch (error) {
             localStorage.removeItem('token');
         } finally {
@@ -29,11 +30,11 @@ export const AuthProvider = ({ children }) => {
         }
     };
 
-    const login = async (email, password) => {
-        const response = await authAPI.login({ email, password });
+    const login = async (identifiant, password) => {
+        const response = await authAPI.login({ identifiant, password });
         const { user, token } = response.data;
         localStorage.setItem('token', token);
-        setUser(user);
+        setUser({ ...user, roles: normalizeRoles(user?.roles) });
         return response;
     };
 
@@ -47,6 +48,8 @@ export const AuthProvider = ({ children }) => {
         loading,
         login,
         logout,
+        isAdmin: isAdminUser(user),
+        roles: normalizeRoles(user?.roles),
         isAuthenticated: !!user,
     };
 
