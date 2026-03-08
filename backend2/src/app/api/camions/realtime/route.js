@@ -1,13 +1,11 @@
-import { getCamionTrajet } from '@/controllers/camionsController';
+import { getCamionsTempsReel } from '@/controllers/camionsController';
 import { verifyAuth, unauthorizedResponse } from '@/lib/auth';
 
-export async function GET(request, { params }) {
+export async function GET(request) {
   const user = verifyAuth(request);
   if (!user) return unauthorizedResponse();
 
   const { searchParams } = new URL(request.url);
   const date = searchParams.get('date');
-  const { camion } = await params;
-  return getCamionTrajet(camion, date);
+  return getCamionsTempsReel(date);
 }
-

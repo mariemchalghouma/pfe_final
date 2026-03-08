@@ -54,8 +54,9 @@ export const authAPI = {
 // Camions API
 export const camionsAPI = {
     getCamions: () => fetchWithAuth('/api/camions'),
-    getCamionTrajet: (camion) => fetchWithAuth(`/api/camions/${encodeURIComponent(camion)}/trajet`),
+    getCamionTrajet: (camion, params = {}) => fetchWithAuth(`/api/camions/${encodeURIComponent(camion)}/trajet${buildQueryString(params)}`),
     getGantt: (date) => fetchWithAuth(`/api/camions/gantt${buildQueryString({ date })}`),
+    getTempsReel: (params = {}) => fetchWithAuth(`/api/camions/realtime${buildQueryString(params)}`),
 };
 
 // Ouvertures API

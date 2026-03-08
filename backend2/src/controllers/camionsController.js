@@ -95,6 +95,112 @@ export const getCamions = async () => {
   }
 };
 
+export const getCamionsTempsReel = async (date) => {
+  try {
+    const targetDate = date || new Date().toISOString().split('T')[0];
+
+    const result = await pool.query(`
+      WITH gps_today AS (
+          SELECT
+              UPPER(TRIM(h.camion::text)) AS camion_norm,
+              h.camion AS camion_display,
+              h.gps_timestamp,
+              h.latitude,
+              h.longitude,
+              h.speed,
+              h.ignition,
+              ROW_NUMBER() OVER (
+                  PARTITION BY UPPER(TRIM(h.camion::text))
+                  ORDER BY h.gps_timestamp DESC
+              ) AS rn,
+              COUNT(*) OVER (
+                  PARTITION BY UPPER(TRIM(h.camion::text))
+              ) AS points_today
+          FROM local_histo_gps_all h
+          WHERE h.camion IS NOT NULL
+            AND DATE(h.gps_timestamp) = $1
+      ),
+      gps_latest AS (
+          SELECT *
+          FROM gps_today
+          WHERE rn = 1
+      ),
+      voyage_today AS (
+          SELECT DISTINCT ON (UPPER(TRIM(v."PLAMOTI"::text)))
+              UPPER(TRIM(v."PLAMOTI"::text)) AS camion_norm,
+              v."PLAMOTI" AS camion,
+              v."SALNOM" AS chauffeur,
+              v."VOYCLE" AS voycle,
+              v."VOYHRD" AS heure_dep,
+              v."VOYHRF" AS heure_fin
+          FROM voyage_chauffeur v
+          WHERE v."PLAMOTI" IS NOT NULL
+            AND DATE(v."CDATE") = $1
+          ORDER BY UPPER(TRIM(v."PLAMOTI"::text)), v."CDATE" DESC, v."VOYCLE" DESC
+      )
+      SELECT
+          COALESCE(v.camion, g.camion_display) AS camion,
+          COALESCE(v.chauffeur, '—') AS chauffeur,
+          v.voycle,
+          v.heure_dep,
+          v.heure_fin,
+          g.gps_timestamp,
+          g.latitude,
+          g.longitude,
+          g.speed,
+          g.ignition,
+          g.points_today
+      FROM gps_latest g
+      LEFT JOIN voyage_today v
+          ON v.camion_norm = g.camion_norm
+      ORDER BY COALESCE(v.camion, g.camion_display)
+    `, [targetDate]);
+
+    const toHour = (val) => {
+      if (val === null || val === undefined) return null;
+      const num = Number(val);
+      if (Number.isNaN(num)) return null;
+      const h = String(Math.floor(num / 100)).padStart(2, '0');
+      const m = String(num % 100).padStart(2, '0');
+      return `${h}:${m}`;
+    };
+
+    const data = result.rows.map((row, index) => {
+      const speed = row.speed != null ? Number(row.speed) : 0;
+      const status = speed > 0 ? 'en_route' : 'arrete';
+      return {
+        id: index + 1,
+        camion: row.camion,
+        chauffeur: row.chauffeur || '—',
+        voycle: row.voycle || null,
+        heureDep: toHour(row.heure_dep),
+        heureFin: toHour(row.heure_fin),
+        lat: row.latitude != null ? Number(row.latitude) : null,
+        lng: row.longitude != null ? Number(row.longitude) : null,
+        vitesse: speed,
+        ignition: row.ignition,
+        statut: status,
+        pointsToday: row.points_today != null ? Number(row.points_today) : 0,
+        derniereMaj: row.gps_timestamp
+          ? new Date(row.gps_timestamp).toISOString().replace('T', ' ').slice(0, 16)
+          : '—',
+      };
+    });
+
+    return Response.json({ success: true, data, date: targetDate });
+  } catch (error) {
+    console.error('Error getCamionsTempsReel:', error);
+    return Response.json(
+      {
+        success: false,
+        message: 'Erreur lors de la récupération du temps réel',
+        error: process.env.NODE_ENV === 'development' ? error.message : undefined,
+      },
+      { status: 500 }
+    );
+  }
+};
+
 /* ═══ Gantt data — one row per CLIENT delivery on a given date ═══ */
 export const getCamionsGantt = async (date) => {
   try {
@@ -400,15 +506,23 @@ export const getCamionsGantt = async (date) => {
   }
 };
 
-export const getCamionTrajet = async (camion) => {
+export const getCamionTrajet = async (camion, date) => {
   try {
-    const result = await pool.query(
-      `SELECT latitude, longitude, gps_timestamp
-       FROM local_histo_gps_all
-       WHERE camion = $1
-       ORDER BY gps_timestamp ASC`,
-      [camion]
-    );
+    const params = [camion];
+    let query = `
+      SELECT latitude, longitude, gps_timestamp
+      FROM local_histo_gps_all
+      WHERE camion = $1
+    `;
+
+    if (date) {
+      query += ' AND DATE(gps_timestamp) = $2';
+      params.push(date);
+    }
+
+    query += ' ORDER BY gps_timestamp ASC';
+
+    const result = await pool.query(query, params);
 
     const trajet = result.rows
       .filter((item) => item.latitude != null && item.longitude != null)

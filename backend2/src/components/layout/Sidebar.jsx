@@ -6,7 +6,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import { canAccessPath } from '@/utils/permissions';
 import {
-    FiGrid, FiTruck, FiStopCircle, FiUnlock,
+    FiGrid, FiTruck, FiStopCircle, FiUnlock, FiRadio,
     FiDroplet, FiMapPin,
     FiSettings, FiLogOut, FiMenu, FiShield
 } from 'react-icons/fi';
@@ -30,6 +30,7 @@ const Sidebar = () => {
 
     const mainMenu = [
         { name: 'Dashboard', path: '/dashboard', icon: FiGrid },
+        { name: 'Temps Réel', path: '/temps-reel', icon: FiRadio },
         { name: 'Camions', path: '/camions', icon: FiTruck },
         { name: 'Suivi Arrêt', path: '/suivi-arret', icon: FiStopCircle },
         { name: 'Ouverture Porte', path: '/ouverture-porte', icon: FiUnlock },
