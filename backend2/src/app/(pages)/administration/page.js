@@ -81,7 +81,7 @@ const Administration = () => {
     };
 
     const getInitials = (user) => {
-        const f = user.identifiant ? user.identifiant[0] : (user.first_name ? user.first_name[0] : (user.name ? user.name[0] : '?'));
+        const f = user.first_name  ? user.first_name [0] : (user.first_name ? user.first_name[0] : (user.name ? user.name[0] : '?'));
         const l = user.last_name ? user.last_name[0] : '';
         return (f + l).toUpperCase();
     };

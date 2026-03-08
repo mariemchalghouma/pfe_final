@@ -93,13 +93,13 @@ const UserModal = ({ isOpen, onClose, onSubmit, initialData }) => {
                             <div className="space-y-4">
                                 <div className="space-y-1">
                                     <label className="block text-sm font-medium text-gray-700 mb-1">Identifiant *</label>
-                                    <input required type="text" name="identifiant" value={formData.identifiant} onChange={handleChange} placeholder="ex: m.benali"
+                                    <input required type="text" name="identifiant" value={formData.identifiant} onChange={handleChange}
                                         className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none transition-all text-sm" />
                                 </div>
 
                                 <div className="space-y-1">
                                     <label className="block text-sm font-medium text-gray-700 mb-1">Mot de passe {!initialData && '*'}</label>
-                                    <input required={!initialData} type="password" name="password" value={formData.password} onChange={handleChange} placeholder="••••••••"
+                                    <input required={!initialData} type="password" name="password" value={formData.password} onChange={handleChange}
                                         className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none transition-all text-sm" />
                                 </div>
                             </div>
@@ -107,12 +107,12 @@ const UserModal = ({ isOpen, onClose, onSubmit, initialData }) => {
                             <div className="grid grid-cols-2 gap-3">
                                 <div className="space-y-1">
                                     <label className="block text-sm font-medium text-gray-700 mb-1">Prénom *</label>
-                                    <input required type="text" name="first_name" value={formData.first_name} onChange={handleChange} placeholder="ex: Mohamed"
+                                    <input required type="text" name="first_name" value={formData.first_name} onChange={handleChange}
                                         className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none transition-all text-sm" />
                                 </div>
                                 <div className="space-y-1">
                                     <label className="block text-sm font-medium text-gray-700 mb-1">Nom *</label>
-                                    <input required type="text" name="last_name" value={formData.last_name} onChange={handleChange} placeholder="ex: Ben Ali"
+                                    <input required type="text" name="last_name" value={formData.last_name} onChange={handleChange}
                                         className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none transition-all text-sm" />
                                 </div>
                             </div>
@@ -120,12 +120,12 @@ const UserModal = ({ isOpen, onClose, onSubmit, initialData }) => {
                             <div className="grid grid-cols-2 gap-3">
                                 <div className="space-y-1">
                                     <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
-                                    <input type="email" name="email" value={formData.email} onChange={handleChange} placeholder="admin@lumiere.tn"
+                                    <input type="email" name="email" value={formData.email} onChange={handleChange}
                                         className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none transition-all text-sm" />
                                 </div>
                                 <div className="space-y-1">
                                     <label className="block text-sm font-medium text-gray-700 mb-1">Téléphone</label>
-                                    <input type="tel" name="phone" value={formData.phone} onChange={handleChange} placeholder="+216 98..."
+                                    <input type="tel" name="phone" value={formData.phone} onChange={handleChange}
                                         className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none transition-all text-sm" />
                                 </div>
                             </div>
