@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
-import { FiCalendar, FiPlus, FiFilter, FiMap } from 'react-icons/fi';
+import { FiPlus, FiFilter, FiMap } from 'react-icons/fi';
 import PoiModal from '@/components/PoiModal';
 import MapModal from '@/components/map/MapModal';
 import { poiAPI, arretsAPI } from '@/services/api';
@@ -10,11 +10,12 @@ import {
     Tooltip, ResponsiveContainer
 } from 'recharts';
 
-const statusConfig = {
-    conforme: { color: '#22c55e', bg: '#dcfce7', label: 'Arrêt conforme' },
-    non_conforme: { color: '#ef4444', bg: '#fee2e2', label: 'Arrêt non conforme' },
-    warning: { color: '#f97316', bg: '#ffedd5', label: 'Arrêt C' },
-};
+const EmptyStopIcon = () => (
+    <svg width="44" height="44" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="12" cy="12" r="10" stroke="#F97316" strokeWidth="1.8" />
+        <rect x="9" y="9" width="6" height="6" rx="1" stroke="#F97316" strokeWidth="1.8" />
+    </svg>
+);
 
 const Arrets = () => {
     const [arrets, setArrets] = useState([]);
@@ -23,19 +24,6 @@ const Arrets = () => {
     const [selectedArretId, setSelectedArretId] = useState(null);
 
     useEffect(() => {
-        const fetchArrets = async () => {
-            try {
-                const response = await arretsAPI.getArrets();
-                if (response.success) {
-                    setArrets(response.data || []);
-                }
-            } catch (error) {
-                console.error('Error fetching arrets:', error);
-            } finally {
-                setLoading(false);
-            }
-        };
-
         const fetchGroups = async () => {
             const initialGroups = [
                 { id: 'g1', nom: 'Dépôt', couleur: '#fbbf24' },
@@ -47,12 +35,12 @@ const Arrets = () => {
             setGroups(initialGroups);
         };
 
-        fetchArrets();
         fetchGroups();
     }, []);
 
+    const today = new Date().toISOString().split('T')[0];
     const [dateFilterMode, setDateFilterMode] = useState('day');
-    const [filterDate, setFilterDate] = useState('');
+    const [filterDate, setFilterDate] = useState(today);
     const [filterStartDate, setFilterStartDate] = useState('');
     const [filterEndDate, setFilterEndDate] = useState('');
     const [filterWeek, setFilterWeek] = useState('');
@@ -65,37 +53,70 @@ const Arrets = () => {
     const [isMapOpen, setIsMapOpen] = useState(false);
     const [mapPositions, setMapPositions] = useState([]);
 
+    const getDateRangeParams = () => {
+        if (dateFilterMode === 'day') {
+            const day = filterDate || today;
+            return { dateStart: day, dateEnd: day };
+        }
+
+        if (dateFilterMode === 'range') {
+            return {
+                dateStart: filterStartDate || today,
+                dateEnd: filterEndDate || filterStartDate || today,
+            };
+        }
+
+        if (dateFilterMode === 'week' && filterWeek) {
+            const [year, week] = filterWeek.split('-W').map(Number);
+            const firstDayOfYear = new Date(Date.UTC(year, 0, 1));
+            const firstWeekDayOffset = (firstDayOfYear.getUTCDay() || 7) - 1;
+            const weekStart = new Date(firstDayOfYear);
+            weekStart.setUTCDate(firstDayOfYear.getUTCDate() - firstWeekDayOffset + (week - 1) * 7);
+            const weekEnd = new Date(weekStart);
+            weekEnd.setUTCDate(weekStart.getUTCDate() + 6);
+            return {
+                dateStart: weekStart.toISOString().split('T')[0],
+                dateEnd: weekEnd.toISOString().split('T')[0],
+            };
+        }
+
+        if (dateFilterMode === 'month' && filterMonth) {
+            const [y, m] = filterMonth.split('-').map(Number);
+            const monthStart = new Date(Date.UTC(y, m - 1, 1));
+            const monthEnd = new Date(Date.UTC(y, m, 0));
+            return {
+                dateStart: monthStart.toISOString().split('T')[0],
+                dateEnd: monthEnd.toISOString().split('T')[0],
+            };
+        }
+
+        return { dateStart: today, dateEnd: today };
+    };
+
+    useEffect(() => {
+        const fetchArrets = async () => {
+            try {
+                setLoading(true);
+                const { dateStart, dateEnd } = getDateRangeParams();
+                const response = await arretsAPI.getArrets({ dateStart, dateEnd });
+                if (response.success) {
+                    setArrets(response.data || []);
+                } else {
+                    setArrets([]);
+                }
+            } catch (error) {
+                console.error('Error fetching arrets:', error);
+                setArrets([]);
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        fetchArrets();
+    }, [dateFilterMode, filterDate, filterStartDate, filterEndDate, filterWeek, filterMonth]);
+
     const filteredData = useMemo(() => {
         return arrets.filter(arret => {
-            const arretDateStr = arret.date.split(' ')[0];
-            const arretDate = new Date(arretDateStr);
-
-            let matchesDate = true;
-            if (dateFilterMode === 'day' && filterDate) {
-                matchesDate = arretDateStr === filterDate;
-            } else if (dateFilterMode === 'range') {
-                if (filterStartDate && filterEndDate) {
-                    matchesDate = arretDateStr >= filterStartDate && arretDateStr <= filterEndDate;
-                } else if (filterStartDate) {
-                    matchesDate = arretDateStr >= filterStartDate;
-                } else if (filterEndDate) {
-                    matchesDate = arretDateStr <= filterEndDate;
-                }
-            } else if (dateFilterMode === 'week' && filterWeek) {
-                const [year, week] = filterWeek.split('-W').map(Number);
-                const getWeekNumber = (d) => {
-                    d = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
-                    d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay() || 7));
-                    const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
-                    return Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
-                };
-                const arretWeekNum = getWeekNumber(arretDate);
-                const arretYear = arretDate.getFullYear();
-                matchesDate = arretYear === year && arretWeekNum === week;
-            } else if (dateFilterMode === 'month' && filterMonth) {
-                matchesDate = arretDateStr.startsWith(filterMonth);
-            }
-
             const matchesType =
                 filterType === 'Tous' ? true :
                     filterType === 'Conforme' ? arret.status === 'conforme' :
@@ -105,9 +126,9 @@ const Arrets = () => {
             const normalizedCamion = (arret.camion || '').replace(/\s/g, '').toLowerCase();
             const matchesMatricule = filterMatricule ? normalizedCamion.includes(normalizedFilter) : true;
 
-            return matchesDate && matchesType && matchesMatricule;
+            return matchesType && matchesMatricule;
         });
-    }, [arrets, dateFilterMode, filterDate, filterStartDate, filterEndDate, filterWeek, filterMonth, filterType, filterMatricule]);
+    }, [arrets, filterType, filterMatricule]);
 
     const stats = useMemo(() => {
         return {
@@ -264,6 +285,7 @@ const Arrets = () => {
                 </div>
 
                 {/* Graphe */}
+                {chartData.length > 0 && (
                 <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm mb-8">
                     <div className="flex items-center justify-between mb-6">
                         <h3 className="text-[11px] font-bold text-gray-400 uppercase tracking-[0.1em]">
@@ -309,6 +331,7 @@ const Arrets = () => {
                         </div>
                     </div>
                 </div>
+                )}
 
                 {/* Table */}
                 <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden min-h-[500px]">
@@ -382,9 +405,15 @@ const Arrets = () => {
                         </table>
                     </div>
                     {filteredData.length === 0 && !loading && (
-                        <div className="flex flex-col items-center justify-center py-20 bg-gray-50/30">
-                            <FiFilter className="text-5xl text-gray-200 mb-4" />
-                            <p className="text-gray-400 font-medium">Aucun arrêt ne correspond aux critères de recherche.</p>
+                        <div className="flex flex-col items-center justify-center py-20 bg-gray-50/30 text-center">
+                            <div className="w-[102px] h-[102px] rounded-3xl bg-[#F9731614] flex items-center justify-center mb-6">
+                                <EmptyStopIcon />
+                            </div>
+                            <p className="text-[40px] leading-none text-gray-900 font-black tracking-tight mb-4">Aucun arrêt trouvé</p>
+                            <p className="text-[32px] leading-[1.35] text-gray-500 font-medium max-w-3xl px-6">
+                                Aucune donnée ne correspond à la date sélectionnée.<br />
+                                Modifiez les filtres ou choisissez une autre date.
+                            </p>
                         </div>
                     )}
                     {loading && (

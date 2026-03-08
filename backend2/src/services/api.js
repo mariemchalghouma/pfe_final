@@ -100,7 +100,7 @@ export const groupsAPI = {
 
 // Arrets API
 export const arretsAPI = {
-    getArrets: () => fetchWithAuth('/api/arrets'),
+    getArrets: (params = {}) => fetchWithAuth(`/api/arrets${buildQueryString(params)}`),
 };
 
 // Carburant API

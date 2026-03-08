@@ -24,8 +24,11 @@ export const calculateDistance = (lat1, lon1, lat2, lon2) => {
  * 1. Calcul de la position moyenne réelle du camion (local_histo_gps_all) durant l'arrêt
  * 2. Comparaison avec la liste des POI (0-10 mètres)
  */
-export const getStops = async () => {
+export const getStops = async ({ date, dateStart, dateEnd } = {}) => {
   try {
+    const start = dateStart || date || new Date().toISOString().split('T')[0];
+    const end = dateEnd || date || start;
+
     const poiResult = await pool.query('SELECT code, lat, lng FROM poi');
     const pois = poiResult.rows;
 
@@ -44,11 +47,14 @@ export const getStops = async () => {
       LEFT JOIN local_histo_gps_all g ON
           REPLACE(g.camion, ' ', '') = REPLACE(s.camion, ' ', '') AND
           g.gps_timestamp BETWEEN s.beginstoptime AND s.endstoptime
+      WHERE DATE(s.beginstoptime) BETWEEN $1 AND $2
+        AND s.endstoptime IS NOT NULL
+        AND DATE(s.endstoptime) BETWEEN $1 AND $2
       GROUP BY s.camion, s.beginstoptime, s.endstoptime, s.stopduration, s.latitude, s.longitude, s.address, s.created_date
       ORDER BY s.beginstoptime DESC
     `;
 
-    const result = await pool.query(query);
+    const result = await pool.query(query, [start, end]);
 
     const arrets = result.rows.map((row, index) => {
       const refLat = row.avg_lat ? parseFloat(row.avg_lat) : parseFloat(row.lat);

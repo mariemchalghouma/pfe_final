@@ -5,5 +5,10 @@ export async function GET(request) {
   const user = verifyAuth(request);
   if (!user) return unauthorizedResponse();
 
-  return getStops();
+  const { searchParams } = new URL(request.url);
+  const date = searchParams.get('date');
+  const dateStart = searchParams.get('dateStart');
+  const dateEnd = searchParams.get('dateEnd');
+
+  return getStops({ date, dateStart, dateEnd });
 }
