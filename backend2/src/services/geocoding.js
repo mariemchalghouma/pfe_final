@@ -27,7 +27,7 @@ export const reverseGeocode = async (lat, lng) => {
             `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&addressdetails=1&accept-language=fr`,
             {
                 headers: {
-                    'User-Agent': 'FleetTracker App'
+                    'User-Agent': 'Voyage Tracking App'
                 }
             }
         );

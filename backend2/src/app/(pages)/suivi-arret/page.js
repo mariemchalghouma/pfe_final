@@ -140,13 +140,21 @@ const Arrets = () => {
 
     const handleSelectArret = (arret) => {
         setSelectedArretId(arret.id);
+        const latStr = parseFloat(arret.lat).toFixed(6);
+        const lngStr = parseFloat(arret.lng).toFixed(6);
         setMapPositions([{
             id: arret.id,
             lat: arret.lat,
             lng: arret.lng,
             label: arret.camion,
             status: arret.status,
-            info: `🕒 ${arret.date} · ⏳ ${arret.duree}`
+            info: (
+                <>
+                    🕒 {arret.date} · ⏳ {arret.duree}
+                    <br />
+                    📍 Lat: {latStr}, Lng: {lngStr}
+                </>
+            )
         }]);
         setIsMapOpen(true);
     };
@@ -158,14 +166,24 @@ const Arrets = () => {
     };
 
     const handleOpenFullMap = () => {
-        const positions = filteredData.map(a => ({
-            id: a.id,
-            lat: a.lat,
-            lng: a.lng,
-            label: a.camion,
-            status: a.status,
-            info: `🕒 ${a.date} · ⏳ ${a.duree}`
-        }));
+        const positions = filteredData.map(a => {
+            const latStr = parseFloat(a.lat).toFixed(6);
+            const lngStr = parseFloat(a.lng).toFixed(6);
+            return {
+                id: a.id,
+                lat: a.lat,
+                lng: a.lng,
+                label: a.camion,
+                status: a.status,
+                info: (
+                    <>
+                        🕒 {a.date} · ⏳ {a.duree}
+                        <br />
+                        📍 Lat: {latStr}, Lng: {lngStr}
+                    </>
+                )
+            };
+        });
         setMapPositions(positions);
         setIsMapOpen(true);
     };
@@ -342,6 +360,7 @@ const Arrets = () => {
                                     <th className="px-6 py-2.5 font-bold text-gray-500 uppercase tracking-wider text-[11px]">Camion</th>
                                     <th className="px-6 py-2.5 font-bold text-gray-500 uppercase tracking-wider text-[11px]">Date & Heure</th>
                                     <th className="px-6 py-2.5 font-bold text-gray-500 uppercase tracking-wider text-[11px]">Durée</th>
+                                    <th className="px-6 py-2.5 font-bold text-gray-500 uppercase tracking-wider text-[11px]">Dest. Programmée</th>
                                     <th className="px-6 py-2.5 font-bold text-gray-500 uppercase tracking-wider text-[11px]">POI proche</th>
                                     <th className="px-6 py-2.5 font-bold text-gray-500 uppercase tracking-wider text-[11px]">N° Voyage</th>
                                     <th className="px-6 py-2.5 font-bold text-gray-500 uppercase tracking-wider text-[11px]">Chauffeur</th>
@@ -367,6 +386,11 @@ const Arrets = () => {
                                         <td className="px-6 py-2 whitespace-nowrap font-medium text-gray-600">{arret.date}</td>
                                         <td className="px-6 py-2 whitespace-nowrap">
                                             <span className="px-3 py-1 bg-gray-100 rounded-full text-xs font-bold text-gray-700">{arret.duree}</span>
+                                        </td>
+                                        <td className="px-6 py-2 whitespace-nowrap">
+                                            <span className="font-semibold text-gray-600 text-[12px] tracking-tight truncate max-w-[150px]">
+                                                {arret.destination_programmee || '-'}
+                                            </span>
                                         </td>
                                         <td className="px-6 py-2">
                                             <span className="font-semibold text-gray-900 text-[12px] tracking-tight truncate max-w-[200px]">

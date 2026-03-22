@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import Image from 'next/image';
 import { useAuth } from '@/context/AuthContext';
 import { getDefaultAuthorizedPath } from '@/utils/permissions';
 
@@ -41,20 +42,25 @@ const Login = () => {
 
     return (
         <div className="min-h-screen flex">
-            {/* Left Side - Orange Branding */}
-            <div className="hidden lg:flex lg:w-[45%] bg-gradient-to-br from-orange-400 to-orange-600 flex-col items-center justify-center text-white p-12 relative overflow-hidden">
-                <div className="absolute top-[-80px] left-[-80px] w-64 h-64 bg-white/10 rounded-full"></div>
-                <div className="absolute bottom-[-60px] right-[-60px] w-48 h-48 bg-white/10 rounded-full"></div>
-                <div className="absolute top-[40%] right-[-30px] w-24 h-24 bg-white/5 rounded-full"></div>
+            {/* Left Side - Branding */}
+            <div className="hidden lg:flex lg:w-[45%] bg-gradient-to-br from-orange-100 to-orange-200 flex-col items-center justify-center text-gray-800 p-12 relative overflow-hidden">
+                <div className="absolute top-[-80px] left-[-80px] w-64 h-64 bg-orange-500/10 rounded-full"></div>
+                <div className="absolute bottom-[-60px] right-[-60px] w-48 h-48 bg-orange-500/10 rounded-full"></div>
+                <div className="absolute top-[40%] right-[-30px] w-24 h-24 bg-orange-500/5 rounded-full"></div>
 
-                <div className="bg-white/20 backdrop-blur-sm rounded-2xl p-6 mb-8">
-                    <svg xmlns="http://www.w3.org/2000/svg" className="w-16 h-16 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 18.75a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m3 0h6m-9 0H3.375a1.125 1.125 0 0 1-1.125-1.125V14.25m17.25 4.5a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m3 0h1.125c.621 0 1.125-.504 1.125-1.125v-3.375c0-.621-.504-1.125-1.125-1.125H18.75M3.375 14.25h.75m0 0h11.25m0 0V6.375c0-.621-.504-1.125-1.125-1.125H4.125C3.504 5.25 3 5.754 3 6.375v7.875m12 0h1.5m-1.5 0v3.375" />
-                    </svg>
+                <div className="mb-6 w-full max-w-[280px]">
+                    <Image
+                        src="/logo.png"
+                        alt="Lumiere Logistique"
+                        width={400}
+                        height={120}
+                        className="w-full h-auto object-contain rounded-xl drop-shadow-sm"
+                        priority
+                    />
                 </div>
 
-                <h1 className="text-4xl font-bold mb-4 text-center">FleetTracker</h1>
-                <p className="text-lg text-white/90 text-center max-w-xs leading-relaxed">
+                <h1 className="text-3xl font-bold mb-4 text-center mt-2 text-gray-900">Voyage Tracking</h1>
+                <p className="text-lg text-gray-600 text-center max-w-xs leading-relaxed">
                     Suivi intelligent de votre flotte de camions en temps réel
                 </p>
             </div>
@@ -154,7 +160,7 @@ const Login = () => {
 
                     <div className="mt-10 text-center">
                         <p className="text-gray-400 text-sm">
-                            &copy; 2026 FleetTracker - Tous droits réservés
+                            &copy; 2026 Voyage Tracking - Tous droits réservés
                         </p>
                     </div>
                 </div>

@@ -105,6 +105,12 @@ export const getStops = async ({ date, dateStart, dateEnd } = {}) => {
       // Conformité : Proximité <= 10m ET Planifié
       const isConforme = (minDistance <= 10) && !!matchedVoyage;
 
+      let destinationName = '-';
+      if (matchedVoyage && matchedVoyage.OTDCODE) {
+        const destPoi = pois.find(p => normalize(p.code) === normalize(matchedVoyage.OTDCODE));
+        destinationName = destPoi ? `${destPoi.code} - ${destPoi.nom}` : matchedVoyage.OTDCODE;
+      }
+
       return {
         id: index + 1,
         camion: row.camion || 'Inconnu',
@@ -121,6 +127,7 @@ export const getStops = async ({ date, dateStart, dateEnd } = {}) => {
         chauffeur_nom: matchedVoyage ? matchedVoyage.SALNOM : '-',
         chauffeur_tel: matchedVoyage ? matchedVoyage.SALTEL : '-',
         nVoyage: '-',
+        destination_programmee: destinationName,
         status: isConforme ? 'conforme' : 'non_conforme',
         lat: refLat,
         lng: refLng,

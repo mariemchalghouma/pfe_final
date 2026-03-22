@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata = {
-  title: "FleetTracker",
+  title: "Voyage Tracking",
   description: "Suivi intelligent de votre flotte de camions",
 };
 

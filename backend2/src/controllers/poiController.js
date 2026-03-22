@@ -18,11 +18,14 @@ const hasRayonColumn = async () => {
 
 export const getPOIs = async () => {
   try {
+    const canSaveRayon = await hasRayonColumn();
+    const rayonCol = canSaveRayon ? 'rayon' : 'NULL as rayon';
+
     const result = await pool.query(`
-      SELECT id, code, groupe, type, lat, lng, description 
+      SELECT id, code, groupe, type, lat, lng, description, ${rayonCol}
       FROM poi
       UNION ALL
-      SELECT (id + 1000000) as id, code_client as code, group_id as groupe, type_point as type, lat, lng, nom_client as description 
+      SELECT (id + 1000000) as id, code_client as code, group_id as groupe, type_point as type, lat, lng, nom_client as description, 10 as rayon
       FROM magasin_aziza
       ORDER BY code ASC
     `);
