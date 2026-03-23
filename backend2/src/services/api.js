@@ -1,9 +1,13 @@
 // Service API centralisé pour toutes les requêtes
 const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
 
+// Prevent duplicate in-flight GET requests for the same endpoint.
+const inFlightGetRequests = new Map();
+
 // Fetch wrapper with token management
 const fetchWithAuth = async (url, options = {}) => {
     const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+    const method = (options.method || 'GET').toUpperCase();
 
     const headers = {
         'Content-Type': 'application/json',
@@ -16,17 +20,39 @@ const fetchWithAuth = async (url, options = {}) => {
 
     const config = {
         ...options,
+        method,
         headers,
     };
 
-    const response = await fetch(`${API_URL}${url}`, config);
+    const requestUrl = `${API_URL}${url}`;
+    const dedupeKey = method === 'GET' ? `${requestUrl}::${token || ''}` : null;
 
-    if (!response.ok) {
-        const error = await response.json().catch(() => ({ message: 'An error occurred' }));
-        throw new Error(error.message || `HTTP error! status: ${response.status}`);
+    if (dedupeKey && inFlightGetRequests.has(dedupeKey)) {
+        return inFlightGetRequests.get(dedupeKey);
     }
 
-    return response.json();
+    const requestPromise = (async () => {
+        const response = await fetch(requestUrl, config);
+
+        if (!response.ok) {
+            const error = await response.json().catch(() => ({ message: 'An error occurred' }));
+            throw new Error(error.message || `HTTP error! status: ${response.status}`);
+        }
+
+        return response.json();
+    })();
+
+    if (dedupeKey) {
+        inFlightGetRequests.set(dedupeKey, requestPromise);
+    }
+
+    try {
+        return await requestPromise;
+    } finally {
+        if (dedupeKey) {
+            inFlightGetRequests.delete(dedupeKey);
+        }
+    }
 };
 
 // Helper to build query string from params

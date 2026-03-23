@@ -1,6 +1,9 @@
 import pool from '../config/database.js';
 import { calculateDistance } from './arretController.js';
 
+
+
+
 export const getCamions = async () => {
   try {
     const result = await pool.query(`
@@ -98,63 +101,106 @@ export const getCamions = async () => {
 export const getCamionsTempsReel = async (date) => {
   try {
     const targetDate = date || new Date().toISOString().split('T')[0];
+    const endDateObj = new Date(`${targetDate}T00:00:00Z`);
+    endDateObj.setUTCDate(endDateObj.getUTCDate() - 6);
+    const startDate = endDateObj.toISOString().split('T')[0];
 
     const result = await pool.query(`
-      WITH gps_today AS (
-          SELECT
-              UPPER(TRIM(h.camion::text)) AS camion_norm,
-              h.camion AS camion_display,
-              h.gps_timestamp,
-              h.latitude,
-              h.longitude,
-              h.speed,
-              h.ignition,
-              ROW_NUMBER() OVER (
-                  PARTITION BY UPPER(TRIM(h.camion::text))
-                  ORDER BY h.gps_timestamp DESC
-              ) AS rn,
-              COUNT(*) OVER (
-                  PARTITION BY UPPER(TRIM(h.camion::text))
-              ) AS points_today
-          FROM local_histo_gps_all h
-          WHERE h.camion IS NOT NULL
-            AND DATE(h.gps_timestamp) = $1
+      WITH voyage_lines AS (
+        SELECT
+          UPPER(TRIM(v."PLAMOTI"::text)) AS camion_norm,
+          DATE(v."VOYDTD")::text          AS voyage_date,
+          v."PLAMOTI"                    AS camion,
+          v."SALNOM"                     AS chauffeur,
+          v."SALTEL"                     AS telephone,
+          v."VOYCLE"                     AS voycle,
+          v."VOYHRD"                     AS heure_dep,
+          v."VOYHRF"                     AS heure_fin,
+          v."OTDCODE"                    AS otdcode
+        FROM voyage_chauffeur v
+        WHERE v."PLAMOTI" IS NOT NULL
+          AND DATE(v."VOYDTD") BETWEEN $1 AND $2
       ),
-      gps_latest AS (
-          SELECT *
-          FROM gps_today
-          WHERE rn = 1
+      voyage_7d AS (
+        SELECT
+          camion_norm,
+          voyage_date,
+          camion,
+          MAX(chauffeur) AS chauffeur,
+          MAX(telephone) AS telephone,
+          voycle,
+          MIN(heure_dep) AS heure_dep,
+          MAX(heure_fin) AS heure_fin,
+          COUNT(*)       AS nb_destinations,
+          ARRAY_AGG(DISTINCT otdcode) FILTER (WHERE otdcode IS NOT NULL) AS otdcodes
+        FROM voyage_lines
+        GROUP BY camion_norm, voyage_date, camion, voycle
       ),
-      voyage_today AS (
-          SELECT DISTINCT ON (UPPER(TRIM(v."PLAMOTI"::text)))
-              UPPER(TRIM(v."PLAMOTI"::text)) AS camion_norm,
-              v."PLAMOTI" AS camion,
-              v."SALNOM" AS chauffeur,
-              v."VOYCLE" AS voycle,
-              v."VOYHRD" AS heure_dep,
-              v."VOYHRF" AS heure_fin
-          FROM voyage_chauffeur v
-          WHERE v."PLAMOTI" IS NOT NULL
-            AND DATE(v."CDATE") = $1
-          ORDER BY UPPER(TRIM(v."PLAMOTI"::text)), v."CDATE" DESC, v."VOYCLE" DESC
+      gps_7d AS (
+        SELECT
+          UPPER(TRIM(h.camion::text)) AS camion_norm,
+          DATE(h.gps_timestamp)::text AS gps_date,
+          h.gps_timestamp,
+          h.latitude,
+          h.longitude,
+          h.speed,
+          h.ignition,
+          ROW_NUMBER() OVER (
+            PARTITION BY UPPER(TRIM(h.camion::text)), DATE(h.gps_timestamp)
+            ORDER BY h.gps_timestamp DESC
+          ) AS rn_day,
+          COUNT(*) OVER (
+            PARTITION BY UPPER(TRIM(h.camion::text))
+          ) AS points_7j
+        FROM local_histo_gps_all h
+        WHERE h.camion IS NOT NULL
+          AND DATE(h.gps_timestamp) BETWEEN $1 AND $2
+      ),
+      gps_latest_by_day AS (
+        SELECT *
+        FROM gps_7d
+        WHERE rn_day = 1
       )
       SELECT
-          COALESCE(v.camion, g.camion_display) AS camion,
-          COALESCE(v.chauffeur, '—') AS chauffeur,
-          v.voycle,
-          v.heure_dep,
-          v.heure_fin,
-          g.gps_timestamp,
-          g.latitude,
-          g.longitude,
-          g.speed,
-          g.ignition,
-          g.points_today
-      FROM gps_latest g
-      LEFT JOIN voyage_today v
-          ON v.camion_norm = g.camion_norm
-      ORDER BY COALESCE(v.camion, g.camion_display)
-    `, [targetDate]);
+        v.voyage_date,
+        v.camion,
+        COALESCE(v.chauffeur, '—') AS chauffeur,
+        COALESCE(v.telephone::text, '—') AS telephone,
+        v.voycle,
+        v.heure_dep,
+        v.heure_fin,
+        v.nb_destinations,
+        v.otdcodes,
+        g.gps_date,
+        g.gps_timestamp,
+        g.latitude,
+        g.longitude,
+        g.speed,
+        g.ignition,
+        g.points_7j,
+        s.beginstoptime,
+        s.endstoptime,
+        s.stopduration,
+        s.address AS stop_address,
+        s.latitude AS stop_lat,
+        s.longitude AS stop_lng
+      FROM voyage_7d v
+      LEFT JOIN gps_latest_by_day g
+        ON g.camion_norm = v.camion_norm
+       AND g.gps_date = v.voyage_date
+      LEFT JOIN voyage_tracking_stops s
+        ON REPLACE(s.camion, ' ', '') = REPLACE(v.camion, ' ', '')
+       AND g.gps_timestamp BETWEEN s.beginstoptime AND s.endstoptime
+      ORDER BY v.voyage_date DESC, v.camion, v.voycle DESC
+    `, [startDate, targetDate]);
+
+    // Récupérer les POI pour le calcul de conformité
+    const poiResult = await pool.query(`
+      SELECT code, description AS nom, lat, lng FROM poi
+      UNION ALL
+      SELECT code_client AS code, nom_client AS nom, lat, lng FROM magasin_aziza
+    `);
+    const pois = poiResult.rows;
 
     const toHour = (val) => {
       if (val === null || val === undefined) return null;
@@ -165,29 +211,86 @@ export const getCamionsTempsReel = async (date) => {
       return `${h}:${m}`;
     };
 
+    const normalize = (val) => (val || '').toString().replace(/\s+/g, '').toUpperCase();
+
     const data = result.rows.map((row, index) => {
       const speed = row.speed != null ? Number(row.speed) : 0;
       const status = speed > 0 ? 'en_route' : 'arrete';
+      const gpsLat = row.latitude != null ? parseFloat(row.latitude) : null;
+      const gpsLng = row.longitude != null ? parseFloat(row.longitude) : null;
+      const hasStopRecord = row.beginstoptime != null;
+
+      // Calcul de conformité quand le camion est arrêté (speed == 0)
+      let arret = null;
+      if (speed === 0 && gpsLat && gpsLng) {
+        // Utiliser la position du stop si disponible, sinon la position GPS
+        const refLat = (hasStopRecord && row.stop_lat) ? parseFloat(row.stop_lat) : gpsLat;
+        const refLng = (hasStopRecord && row.stop_lng) ? parseFloat(row.stop_lng) : gpsLng;
+
+        // Trouver le POI le plus proche
+        let minDistance = Infinity;
+        let nearestPoi = null;
+
+        pois.forEach((poi) => {
+          const dist = calculateDistance(refLat, refLng, parseFloat(poi.lat), parseFloat(poi.lng));
+          if (dist < minDistance) {
+            minDistance = dist;
+            nearestPoi = poi;
+          }
+        });
+
+        // Vérifier si le POI le plus proche correspond à un OTDCODE planifié
+        const otdcodes = row.otdcodes || [];
+        const poiCode = nearestPoi ? normalize(nearestPoi.code) : null;
+        const isPlanned = poiCode && otdcodes.some(code => normalize(code) === poiCode);
+
+        // Conforme = distance ≤ 10m ET arrêt planifié
+        const isConforme = (minDistance <= 10) && isPlanned;
+
+        arret = {
+          debut: hasStopRecord ? new Date(row.beginstoptime).toISOString().replace('T', ' ').slice(0, 16) : null,
+          fin: (hasStopRecord && row.endstoptime) ? new Date(row.endstoptime).toISOString().replace('T', ' ').slice(0, 16) : null,
+          duree: (hasStopRecord && row.stopduration)
+            ? `${row.stopduration.hours || 0}h ${row.stopduration.minutes || 0}min`
+            : null,
+          adresse: (hasStopRecord && row.stop_address) ? row.stop_address : null,
+          status: isConforme ? 'conforme' : 'non_conforme',
+          poiProche: nearestPoi ? `${nearestPoi.code} - ${nearestPoi.nom}` : null,
+          distance: minDistance !== Infinity ? Math.round(minDistance) : null,
+        };
+      }
+
       return {
         id: index + 1,
+        dateTrajet: row.voyage_date,
+        datePointGps: row.gps_date || null,
         camion: row.camion,
         chauffeur: row.chauffeur || '—',
+        telephone: row.telephone || '—',
         voycle: row.voycle || null,
         heureDep: toHour(row.heure_dep),
         heureFin: toHour(row.heure_fin),
+        nbDestinations: row.nb_destinations != null ? Number(row.nb_destinations) : 0,
         lat: row.latitude != null ? Number(row.latitude) : null,
         lng: row.longitude != null ? Number(row.longitude) : null,
         vitesse: speed,
         ignition: row.ignition,
         statut: status,
-        pointsToday: row.points_today != null ? Number(row.points_today) : 0,
+        pointsToday: row.points_7j != null ? Number(row.points_7j) : 0,
+        points7j: row.points_7j != null ? Number(row.points_7j) : 0,
         derniereMaj: row.gps_timestamp
           ? new Date(row.gps_timestamp).toISOString().replace('T', ' ').slice(0, 16)
           : '—',
+        arret,
       };
     });
 
-    return Response.json({ success: true, data, date: targetDate });
+    return Response.json({
+      success: true,
+      data,
+      date: targetDate,
+      range: { startDate, endDate: targetDate },
+    });
   } catch (error) {
     console.error('Error getCamionsTempsReel:', error);
     return Response.json(
@@ -201,7 +304,7 @@ export const getCamionsTempsReel = async (date) => {
   }
 };
 
-/* ═══ Gantt data — one row per CLIENT delivery on a given date ═══ */
+/* ═══ Gantt data — one row per VOYAGE (camion + voycle) on a given date ═══ */
 export const getCamionsGantt = async (date) => {
   try {
     const targetDate = date || new Date().toISOString().split('T')[0];
@@ -211,7 +314,7 @@ export const getCamionsGantt = async (date) => {
       SELECT "PLAMOTI", "VOYCLE", "SALNOM", "RGILIBL", "SITSIRETEDI",
              "OTDCODE", "PLATOUORDRE", "VOYHRD", "VOYHRF"
       FROM voyage_chauffeur
-      WHERE DATE("CDATE") = $1 AND "PLAMOTI" IS NOT NULL
+      WHERE DATE("VOYDTD") = $1 AND "PLAMOTI" IS NOT NULL
       ORDER BY "PLAMOTI", "VOYCLE", "PLATOUORDRE"
     `, [targetDate]);
 
@@ -219,7 +322,7 @@ export const getCamionsGantt = async (date) => {
       return Response.json({ success: true, data: [], date: targetDate });
     }
 
-    // 2) Stops with GPS average position (same technique as arretController)
+    // 2) Stops with GPS average position
     const stopsResult = await pool.query(`
       SELECT
         s.camion, s.beginstoptime, s.endstoptime, s.stopduration,
@@ -235,25 +338,15 @@ export const getCamionsGantt = async (date) => {
       ORDER BY s.camion, s.beginstoptime ASC
     `, [targetDate]);
 
-    // 3) GPS activity window per camion
-    const gpsResult = await pool.query(`
-      SELECT camion,
-        MIN(gps_timestamp) AS first_seen, MAX(gps_timestamp) AS last_seen,
-        SUM(CASE WHEN speed > 0 THEN 1 ELSE 0 END) AS moving_points,
-        COUNT(*) AS total_points
-      FROM local_histo_gps_all
-      WHERE DATE(gps_timestamp) = $1
-      GROUP BY camion
-    `, [targetDate]);
+    // 3) POI pour le calcul de conformité
+    const poiResult = await pool.query(`
+      SELECT code, description AS nom, lat, lng FROM poi
+      UNION ALL
+      SELECT code_client AS code, nom_client AS nom, lat, lng FROM magasin_aziza
+    `);
+    const pois = poiResult.rows;
 
-    // 4) POIs for stop classification
-    const poiResult = await pool.query('SELECT nom, groupe, type, lat, lng, rayon FROM poi');
-    const pois = poiResult.rows.map(p => ({
-      nom: p.nom, groupe: (p.groupe || '').toLowerCase(), type: (p.type || '').toLowerCase(),
-      lat: parseFloat(p.lat), lng: parseFloat(p.lng), rayon: parseFloat(p.rayon) || 200,
-    }));
-
-    // 5) Ravitaillements on the date
+    // 4) Ravitaillements
     const ravitResult = await pool.query(`
       SELECT matricule_camion, COALESCE(date_trans, "date"::timestamp) AS ravit_time,
              latitude, longitude, lieu
@@ -262,56 +355,20 @@ export const getCamionsGantt = async (date) => {
       ORDER BY COALESCE(date_trans, "date"::timestamp)
     `, [targetDate]);
 
-    const ravitMap = {};
-    ravitResult.rows.forEach(r => {
-      const key = (r.matricule_camion || '').replace(/\s+/g, '').toUpperCase();
-      if (!ravitMap[key]) ravitMap[key] = [];
-      ravitMap[key].push({
-        time: new Date(r.ravit_time), lat: parseFloat(r.latitude),
-        lng: parseFloat(r.longitude), lieu: r.lieu,
-      });
-    });
+    // 5) Ouvertures de porte
+    const ouverturesResult = await pool.query(`
+      SELECT camion, date_ouverture, date_fermeture, adress, lat, lng, duration,
+             temp_ouv, temp_var, temp_fer
+      FROM voyagetracking_port_ouvert
+      WHERE DATE(date_ouverture) = $1
+        AND date_fermeture IS NOT NULL
+      ORDER BY date_ouverture ASC
+    `, [targetDate]);
 
-    // Helper: classify a stop via POI + ravitaillement matching
-    const classifyStop = (stop, camionKey) => {
-      const refLat = stop.avg_lat ? parseFloat(stop.avg_lat) : parseFloat(stop.latitude);
-      const refLng = stop.avg_lng ? parseFloat(stop.avg_lng) : parseFloat(stop.longitude);
-      const stopStart = new Date(stop.beginstoptime);
-
-      const ravits = ravitMap[camionKey] || [];
-      const isRavit = ravits.some(r => Math.abs(r.time - stopStart) < 3600000);
-      if (isRavit) return { type: 'ravitaillement', poiName: 'Station carburant', distance: null, conforme: true };
-
-      let bestDist = Infinity; let bestPoi = null;
-      pois.forEach(poi => {
-        const dist = calculateDistance(refLat, refLng, poi.lat, poi.lng);
-        if (dist < bestDist) { bestDist = dist; bestPoi = poi; }
-      });
-
-      if (bestPoi && bestDist <= bestPoi.rayon) {
-        const g = bestPoi.groupe;
-        let segType = 'client';
-        if (g.includes('depot') || g.includes('dépôt') || g.includes('base') || g.includes('entrepot') || g.includes('entrepôt')) segType = 'depot';
-        else if (g.includes('station') || g.includes('carburant') || g.includes('fuel')) segType = 'ravitaillement';
-        return { type: segType, poiName: bestPoi.nom, distance: Math.round(bestDist), conforme: true };
-      }
-
-      const durationMin = Number(stop.stopduration) || 0;
-      return {
-        type: durationMin > 30 ? 'stop_long' : 'stop',
-        poiName: bestPoi ? bestPoi.nom : null,
-        distance: bestDist !== Infinity ? Math.round(bestDist) : null,
-        conforme: false,
-      };
-    };
-
-    // Normalize camion key — strip ALL whitespace for consistent matching
+    // === Build lookup maps ===
     const normKey = (raw) => (raw || '').replace(/\s+/g, '').toUpperCase();
 
-    // Build index maps (keys normalised)
-    const gpsMap = {};
-    gpsResult.rows.forEach(r => { gpsMap[normKey(r.camion)] = r; });
-
+    // Stops map
     const stopsMap = {};
     stopsResult.rows.forEach(s => {
       const key = normKey(s.camion);
@@ -319,144 +376,86 @@ export const getCamionsGantt = async (date) => {
       stopsMap[key].push(s);
     });
 
-    // Collect all voyage hours per camion — used as fallback when no GPS/stops
-    const camionVoyageHours = {};
-    voyageResult.rows.forEach(v => {
-      const key = normKey(v.PLAMOTI);
-      if (!camionVoyageHours[key]) camionVoyageHours[key] = { deps: [], fins: [] };
-      if (v.VOYHRD) camionVoyageHours[key].deps.push(Number(v.VOYHRD));
-      if (v.VOYHRF) camionVoyageHours[key].fins.push(Number(v.VOYHRF));
+    // Ravitaillements map
+    const ravitMap = {};
+    ravitResult.rows.forEach(r => {
+      const key = normKey(r.matricule_camion);
+      if (!ravitMap[key]) ravitMap[key] = [];
+      ravitMap[key].push({
+        time: new Date(r.ravit_time),
+        lat: r.latitude ? parseFloat(r.latitude) : null,
+        lng: r.longitude ? parseFloat(r.longitude) : null,
+        lieu: r.lieu,
+      });
     });
 
-    // Helper: convert VOYHRD/VOYHRF numeric (e.g. 700 → "07:00") to Date
+    // Ouvertures map
+    const ouverturesMap = {};
+    ouverturesResult.rows.forEach(o => {
+      const key = normKey(o.camion);
+      if (!ouverturesMap[key]) ouverturesMap[key] = [];
+      ouverturesMap[key].push({
+        start: new Date(o.date_ouverture),
+        end: new Date(o.date_fermeture),
+        adresse: o.adress || null,
+        lat: o.lat ? parseFloat(o.lat) : null,
+        lng: o.lng ? parseFloat(o.lng) : null,
+        duration: o.duration || null,
+        tempOuv: o.temp_ouv ? Number(o.temp_ouv) : null,
+        tempVar: o.temp_var ? Number(o.temp_var) : null,
+        tempFer: o.temp_fer ? Number(o.temp_fer) : null,
+      });
+    });
+
+    // Helper: convert VOYHRD/VOYHRF numeric (e.g. 700 → Date)
     const numToTime = (num) => {
       const h = String(Math.floor(num / 100)).padStart(2, '0');
       const m = String(num % 100).padStart(2, '0');
       return new Date(`${targetDate}T${h}:${m}:00`);
     };
 
-    // Helper: build stop segments from a sorted array of stops
-    const buildStopSegments = (sortedStops, camionKey, cursor) => {
-      const segs = [];
-      let cur = cursor;
-      sortedStops.forEach(stop => {
-        const stopStart = new Date(stop.beginstoptime);
-        const durationMin = Number(stop.stopduration) || 0;
-        const stopEnd = new Date(stop.endstoptime || stopStart.getTime() + durationMin * 60000);
-        const classification = classifyStop(stop, camionKey);
+    const numToTimeStr = (num) => {
+      if (!num) return null;
+      const h = String(Math.floor(num / 100)).padStart(2, '0');
+      const m = String(num % 100).padStart(2, '0');
+      return `${h}:${m}`;
+    };
 
-        if (stopStart > cur) {
-          segs.push({ type: 'driving', start: cur.toISOString(), end: stopStart.toISOString() });
-        }
+    // Helper: classify a stop via POI + OTDCODE matching (like arretController)
+    const classifyStop = (stop, otdcodes) => {
+      const refLat = stop.avg_lat ? parseFloat(stop.avg_lat) : parseFloat(stop.latitude);
+      const refLng = stop.avg_lng ? parseFloat(stop.avg_lng) : parseFloat(stop.longitude);
 
-        segs.push({
-          type: classification.type, start: stopStart.toISOString(), end: stopEnd.toISOString(),
-          duration: durationMin, address: stop.address || '—',
-          lat: stop.avg_lat ? Number(stop.avg_lat) : (stop.latitude ? Number(stop.latitude) : null),
-          lng: stop.avg_lng ? Number(stop.avg_lng) : (stop.longitude ? Number(stop.longitude) : null),
-          poiName: classification.poiName, distance: classification.distance, conforme: classification.conforme,
+      // Find nearest POI
+      let minDistance = Infinity;
+      let nearestPoi = null;
+      if (refLat && refLng) {
+        pois.forEach((poi) => {
+          const dist = calculateDistance(refLat, refLng, parseFloat(poi.lat), parseFloat(poi.lng));
+          if (dist < minDistance) {
+            minDistance = dist;
+            nearestPoi = poi;
+          }
         });
-        cur = stopEnd > cur ? stopEnd : cur;
-      });
-      return { segs, cursor: cur };
-    };
-
-    // Compute & cache segments per unique camion
-    const segmentsCache = {};
-    const computeSegments = (camionKey) => {
-      if (segmentsCache[camionKey]) return segmentsCache[camionKey];
-
-      const gps = gpsMap[camionKey];
-      const stops = stopsMap[camionKey] || [];
-      const dayStart = new Date(`${targetDate}T00:00:00`);
-      const dayEnd   = new Date(`${targetDate}T23:59:59`);
-
-      /* ── CASE A: no GPS, no stops → use voyage hours as minimal "planned" bar ── */
-      if (!gps && stops.length === 0) {
-        const hours = camionVoyageHours[camionKey];
-        if (hours && hours.deps.length > 0) {
-          const depTime = numToTime(Math.min(...hours.deps));
-          const finTime = hours.fins.length > 0
-            ? numToTime(Math.max(...hours.fins))
-            : new Date(depTime.getTime() + 8 * 3600000);
-
-          const segments = [];
-          if (depTime > dayStart) segments.push({ type: 'inactive', start: dayStart.toISOString(), end: depTime.toISOString() });
-          segments.push({ type: 'driving', start: depTime.toISOString(), end: finTime.toISOString() });
-          if (finTime < dayEnd) segments.push({ type: 'inactive', start: finTime.toISOString(), end: dayEnd.toISOString() });
-
-          const res = { segments, hasData: true, firstSeen: depTime.toISOString(), lastSeen: finTime.toISOString(), movingPct: 100 };
-          segmentsCache[camionKey] = res;
-          return res;
-        }
-        // No hours at all — truly no data
-        const res = { segments: [], hasData: false, firstSeen: null, lastSeen: null, movingPct: 0 };
-        segmentsCache[camionKey] = res;
-        return res;
       }
 
-      /* ── CASE B: no GPS but stops exist → build from stops + voyage hours window ── */
-      if (!gps) {
-        const sortedStops = [...stops].sort((a, b) => new Date(a.beginstoptime) - new Date(b.beginstoptime));
-        let activityStart = new Date(sortedStops[0].beginstoptime);
-        const lastStopRaw = sortedStops[sortedStops.length - 1];
-        let activityEnd = new Date(lastStopRaw.endstoptime || new Date(lastStopRaw.beginstoptime).getTime() + (Number(lastStopRaw.stopduration)||0)*60000);
+      // Check if the nearest POI matches a planned OTDCODE
+      const normalize = (val) => (val || '').toString().replace(/\s+/g, '').toUpperCase();
+      const poiCode = nearestPoi ? normalize(nearestPoi.code) : null;
+      const isPlanned = poiCode && (otdcodes || []).some(code => normalize(code) === poiCode);
 
-        // Extend window with voyage hours if available
-        const hours = camionVoyageHours[camionKey];
-        if (hours?.deps?.length) {
-          const depTime = numToTime(Math.min(...hours.deps));
-          if (depTime < activityStart) activityStart = depTime;
-        }
-        if (hours?.fins?.length) {
-          const finTime = numToTime(Math.max(...hours.fins));
-          if (finTime > activityEnd) activityEnd = finTime;
-        }
+      // Conforme = distance ≤ 10m AND planned
+      const isConforme = (minDistance <= 10) && isPlanned;
 
-        const segments = [];
-        if (activityStart > dayStart) segments.push({ type: 'inactive', start: dayStart.toISOString(), end: activityStart.toISOString() });
-
-        const { segs, cursor } = buildStopSegments(sortedStops, camionKey, activityStart);
-        segments.push(...segs);
-
-        if (cursor < activityEnd) segments.push({ type: 'driving', start: cursor.toISOString(), end: activityEnd.toISOString() });
-        if (activityEnd < dayEnd) segments.push({ type: 'inactive', start: activityEnd.toISOString(), end: dayEnd.toISOString() });
-
-        const res = { segments, hasData: true, firstSeen: activityStart.toISOString(), lastSeen: activityEnd.toISOString(), movingPct: 50 };
-        segmentsCache[camionKey] = res;
-        return res;
-      }
-
-      /* ── CASE C: GPS exists → full precision (original logic) ── */
-      const segments = [];
-      const firstSeen = new Date(gps.first_seen);
-      const lastSeen = new Date(gps.last_seen);
-      const sortedStops = [...stops].sort((a, b) => new Date(a.beginstoptime) - new Date(b.beginstoptime));
-
-      if (firstSeen > dayStart) {
-        segments.push({ type: 'inactive', start: dayStart.toISOString(), end: firstSeen.toISOString() });
-      }
-
-      const { segs, cursor } = buildStopSegments(sortedStops, camionKey, firstSeen);
-      segments.push(...segs);
-
-      if (cursor < lastSeen) {
-        segments.push({ type: 'driving', start: cursor.toISOString(), end: lastSeen.toISOString() });
-      }
-      if (lastSeen < dayEnd) {
-        segments.push({ type: 'inactive', start: lastSeen.toISOString(), end: dayEnd.toISOString() });
-      }
-
-      const res = {
-        segments, hasData: true,
-        firstSeen: gps.first_seen, lastSeen: gps.last_seen,
-        movingPct: gps.total_points > 0 ? Math.round((gps.moving_points / gps.total_points) * 100) : 0,
+      return {
+        type: isConforme ? 'stop_conforme' : 'stop_non_conforme',
+        poiName: nearestPoi ? `${nearestPoi.code} - ${nearestPoi.nom}` : null,
+        distance: minDistance !== Infinity ? Math.round(minDistance) : null,
+        conforme: isConforme,
       };
-      segmentsCache[camionKey] = res;
-      return res;
     };
 
-    // Output: one row per VOYAGE (PLAMOTI + VOYCLE), clients grouped inside
+    // Group voyages by camion + voycle
     const voyageGroups = {};
     voyageResult.rows.forEach(v => {
       const groupKey = `${v.PLAMOTI}__${v.VOYCLE}`;
@@ -465,10 +464,21 @@ export const getCamionsGantt = async (date) => {
           camion: v.PLAMOTI,
           chauffeur: v.SALNOM || '—',
           voycle: v.VOYCLE,
-          heureDep: v.VOYHRD ? `${String(Math.floor(v.VOYHRD / 100)).padStart(2, '0')}:${String(v.VOYHRD % 100).padStart(2, '0')}` : null,
-          heureFin: v.VOYHRF ? `${String(Math.floor(v.VOYHRF / 100)).padStart(2, '0')}:${String(v.VOYHRF % 100).padStart(2, '0')}` : null,
+          heureDep: Number(v.VOYHRD) || null,
+          heureFin: Number(v.VOYHRF) || null,
+          otdcodes: [],
           clients: [],
         };
+      }
+      if (v.OTDCODE) voyageGroups[groupKey].otdcodes.push(v.OTDCODE);
+      // Update dep/fin with min/max across all clients in this voyage
+      const hrd = Number(v.VOYHRD);
+      const hrf = Number(v.VOYHRF);
+      if (hrd && (!voyageGroups[groupKey].heureDep || hrd < voyageGroups[groupKey].heureDep)) {
+        voyageGroups[groupKey].heureDep = hrd;
+      }
+      if (hrf && (!voyageGroups[groupKey].heureFin || hrf > voyageGroups[groupKey].heureFin)) {
+        voyageGroups[groupKey].heureFin = hrf;
       }
       voyageGroups[groupKey].clients.push({
         ordre: Number(v.PLATOUORDRE) || 0,
@@ -478,24 +488,159 @@ export const getCamionsGantt = async (date) => {
       });
     });
 
+    // Build Gantt data
     const ganttData = Object.values(voyageGroups).map(vg => {
-      const key = normKey(vg.camion);
-      const camionData = computeSegments(key);
+      const camionKey = normKey(vg.camion);
+      const stops = stopsMap[camionKey] || [];
+      const ravits = ravitMap[camionKey] || [];
+      const ouvertures = ouverturesMap[camionKey] || [];
+      const otdcodes = [...new Set(vg.otdcodes)]; // unique OTDCODE list
+
+      // Trip window: VOYHRD → VOYHRF
+      const tripStart = vg.heureDep ? numToTime(vg.heureDep) : null;
+      const tripEnd = vg.heureFin ? numToTime(vg.heureFin) : null;
+
+      if (!tripStart || !tripEnd) {
+        return {
+          id: `${vg.camion}-${vg.voycle}`,
+          camion: vg.camion,
+          chauffeur: vg.chauffeur,
+          voycle: vg.voycle,
+          heureDep: numToTimeStr(vg.heureDep),
+          heureFin: numToTimeStr(vg.heureFin),
+          clients: vg.clients,
+          nbClients: vg.clients.length,
+          segments: [],
+          hasData: false,
+        };
+      }
+
+      // Collect ALL events within the trip window [tripStart, tripEnd]
+      const events = [];
+
+      // — Stops within trip window
+      stops.forEach(stop => {
+        const sStart = new Date(stop.beginstoptime);
+        const durationMin = Number(stop.stopduration) || 0;
+        const sEnd = new Date(stop.endstoptime || sStart.getTime() + durationMin * 60000);
+
+        // Only include stops that overlap with the trip window
+        if (sEnd <= tripStart || sStart >= tripEnd) return;
+
+        const clampedStart = sStart < tripStart ? tripStart : sStart;
+        const clampedEnd = sEnd > tripEnd ? tripEnd : sEnd;
+
+        const classification = classifyStop(stop, otdcodes);
+        events.push({
+          type: classification.type,
+          start: clampedStart,
+          end: clampedEnd,
+          duration: Math.round((clampedEnd - clampedStart) / 60000),
+          address: stop.address || '—',
+          lat: stop.avg_lat ? Number(stop.avg_lat) : (stop.latitude ? Number(stop.latitude) : null),
+          lng: stop.avg_lng ? Number(stop.avg_lng) : (stop.longitude ? Number(stop.longitude) : null),
+          poiName: classification.poiName,
+          distance: classification.distance,
+          conforme: classification.conforme,
+        });
+      });
+
+      // — Ravitaillements within trip window
+      ravits.forEach(r => {
+        if (r.time < tripStart || r.time >= tripEnd) return;
+        const rEnd = new Date(r.time.getTime() + 15 * 60000); // 15 min default duration
+        events.push({
+          type: 'ravitaillement',
+          start: r.time,
+          end: rEnd > tripEnd ? tripEnd : rEnd,
+          duration: 15,
+          address: r.lieu || '—',
+          lat: r.lat,
+          lng: r.lng,
+          poiName: r.lieu || 'Station carburant',
+          distance: null,
+          conforme: true,
+        });
+      });
+
+      // — Ouvertures de porte within trip window
+      ouvertures.forEach(o => {
+        if (o.end <= tripStart || o.start >= tripEnd) return;
+        const clampedStart = o.start < tripStart ? tripStart : o.start;
+        const clampedEnd = o.end > tripEnd ? tripEnd : o.end;
+        events.push({
+          type: 'ouverture_porte',
+          start: clampedStart,
+          end: clampedEnd,
+          duration: Math.round((clampedEnd - clampedStart) / 60000),
+          address: o.adresse || '—',
+          lat: o.lat,
+          lng: o.lng,
+          poiName: null,
+          distance: null,
+          conforme: null,
+          tempOuv: o.tempOuv,
+          tempVar: o.tempVar,
+          tempFer: o.tempFer,
+        });
+      });
+
+      // Sort all events by start time
+      events.sort((a, b) => a.start - b.start);
+
+      // Build final segments: fill gaps with 'driving'
+      const segments = [];
+      let cursor = tripStart;
+
+      events.forEach(evt => {
+        if (evt.start > cursor) {
+          segments.push({
+            type: 'driving',
+            start: cursor.toISOString(),
+            end: evt.start.toISOString(),
+            duration: Math.round((evt.start - cursor) / 60000),
+          });
+        }
+        segments.push({
+          ...evt,
+          start: evt.start.toISOString(),
+          end: evt.end.toISOString(),
+        });
+        if (evt.end > cursor) cursor = evt.end;
+      });
+
+      // Fill remaining time until tripEnd with driving
+      if (cursor < tripEnd) {
+        segments.push({
+          type: 'driving',
+          start: cursor.toISOString(),
+          end: tripEnd.toISOString(),
+          duration: Math.round((tripEnd - cursor) / 60000),
+        });
+      }
+
+      const totalMinutes = Math.round((tripEnd - tripStart) / 60000);
+      const drivingMinutes = segments
+        .filter(s => s.type === 'driving')
+        .reduce((sum, s) => sum + (s.duration || 0), 0);
 
       return {
         id: `${vg.camion}-${vg.voycle}`,
         camion: vg.camion,
         chauffeur: vg.chauffeur,
         voycle: vg.voycle,
-        heureDep: vg.heureDep,
-        heureFin: vg.heureFin,
+        heureDep: numToTimeStr(vg.heureDep),
+        heureFin: numToTimeStr(vg.heureFin),
+        dureeTrajet: `${Math.floor(totalMinutes / 60)}h${totalMinutes % 60 > 0 ? String(totalMinutes % 60).padStart(2, '0') : ''}`,
         clients: vg.clients,
         nbClients: vg.clients.length,
-        segments: camionData.segments,
-        hasData: camionData.hasData,
-        firstSeen: camionData.firstSeen,
-        lastSeen: camionData.lastSeen,
-        movingPct: camionData.movingPct,
+        segments,
+        hasData: true,
+        movingPct: totalMinutes > 0 ? Math.round((drivingMinutes / totalMinutes) * 100) : 0,
+        nbStopsConforme: segments.filter(s => s.type === 'stop_conforme').length,
+        nbStopsNonConforme: segments.filter(s => s.type === 'stop_non_conforme').length,
+        nbRavitaillements: segments.filter(s => s.type === 'ravitaillement').length,
+        nbOuverturesPorte: segments.filter(s => s.type === 'ouverture_porte').length,
       };
     });
 
