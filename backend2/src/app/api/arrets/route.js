@@ -6,6 +6,7 @@ export async function GET(request) {
   if (!user) return unauthorizedResponse();
 
   const { searchParams } = new URL(request.url);
+<<<<<<< HEAD
   const date = searchParams.get("date");
   const dateStart = searchParams.get("dateStart");
   const dateEnd = searchParams.get("dateEnd");
@@ -14,4 +15,12 @@ export async function GET(request) {
     : 10;
 
   return getStops({ date, dateStart, dateEnd, rayon });
+=======
+  const date = searchParams.get('date');
+  const dateStart = searchParams.get('dateStart');
+  const dateEnd = searchParams.get('dateEnd');
+  const site = searchParams.get('site');
+
+  return getStops({ date, dateStart, dateEnd, site });
+>>>>>>> 0b95825 (UI camions: side panel + gantt updates)
 }

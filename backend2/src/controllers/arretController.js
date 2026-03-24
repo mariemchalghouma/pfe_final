@@ -44,9 +44,14 @@ export const getStops = async ({
     const pois = poiResult.rows;
 
     // Récupérer les données de planification voyage_chauffeur pour la période
+<<<<<<< HEAD
     const voyageResult = await pool.query(
       `
       SELECT "PLAMOTI", "VOYDTD", "VOYCLE", "SALNOM", "SALTEL", "OTDCODE"
+=======
+    const voyageResult = await pool.query(`
+      SELECT "PLAMOTI", "VOYDTD", "VOYCLE", "SALNOM", "SALTEL", "RGILIBL", "SITSIRETEDI","OTDCODE"
+>>>>>>> 0b95825 (UI camions: side panel + gantt updates)
       FROM voyage_chauffeur
       WHERE DATE("VOYDTD") BETWEEN $1 AND $2
     `,

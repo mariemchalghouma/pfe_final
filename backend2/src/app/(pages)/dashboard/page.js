@@ -4,7 +4,6 @@ import { useEffect, useState } from 'react';
 import { camionsAPI } from '@/services/api';
 import { FiTruck, FiUsers, FiNavigation, FiActivity, FiArrowUp, FiArrowDown, FiMap } from 'react-icons/fi';
 import MapModal from '@/components/map/MapModal';
-import NotificationsDropdown from '@/components/ui/NotificationsDropdown';
 
 const Dashboard = () => {
     const [camions, setCamions] = useState([]);
@@ -67,7 +66,6 @@ const Dashboard = () => {
                         <p className="text-gray-500 mt-1 font-medium">Aperçu en temps réel de votre flotte</p>
                     </div>
                     <div className="flex items-center gap-3">
-                        <NotificationsDropdown />
                         <button
                             onClick={() => setIsMapOpen(true)}
                             className="flex items-center gap-2 px-6 py-3 bg-gray-900 text-white rounded-2xl font-bold hover:bg-gray-800 transition-all shadow-xl shadow-gray-200"

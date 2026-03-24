@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
-import { FiPlus, FiFilter, FiMap } from 'react-icons/fi';
+import { FiPlus, FiFilter, FiMap, FiTarget, FiCheckCircle, FiXCircle } from 'react-icons/fi';
 import PoiModal from '@/components/PoiModal';
 import MapModal from '@/components/map/MapModal';
 import { poiAPI, arretsAPI } from '@/services/api';
@@ -16,6 +16,17 @@ const EmptyStopIcon = () => (
         <rect x="9" y="9" width="6" height="6" rx="1" stroke="#F97316" strokeWidth="1.8" />
     </svg>
 );
+
+const SITE_OPTIONS = ['BAR', 'JER', 'GAB', 'SAL', 'CAP', '9901', 'GAS', 'BSL', 'BIZ', 'SFX', 'TUN', 'BKS'];
+const normalizeSite = (value) => (value || '').toString().trim().toUpperCase();
+
+const extractSiteCode = (value) => {
+    const raw = (value || '').toString().trim();
+    if (!raw || raw === '-') return null;
+    const code = raw.includes(' - ') ? raw.split(' - ')[0] : raw;
+    const normalized = normalizeSite(code);
+    return normalized && normalized !== '-' ? normalized : null;
+};
 
 const Arrets = () => {
     const [arrets, setArrets] = useState([]);
@@ -47,6 +58,7 @@ const Arrets = () => {
     const [filterMonth, setFilterMonth] = useState('');
     const [filterType, setFilterType] = useState('Tous');
     const [filterMatricule, setFilterMatricule] = useState('');
+    const [filterSite, setFilterSite] = useState('ALL');
 
     const [showPoiModal, setShowPoiModal] = useState(false);
     const [poiModalData, setPoiModalData] = useState(null);
@@ -115,6 +127,21 @@ const Arrets = () => {
         fetchArrets();
     }, [dateFilterMode, filterDate, filterStartDate, filterEndDate, filterWeek, filterMonth]);
 
+    const availableSites = useMemo(() => {
+        const dynamicSites = new Set(
+            arrets.flatMap((a) => [
+                extractSiteCode(a.destination_programmee),
+                extractSiteCode(a.poiPlanning),
+            ].filter(Boolean))
+        );
+
+        const merged = [...SITE_OPTIONS];
+        dynamicSites.forEach((s) => {
+            if (!merged.includes(s)) merged.push(s);
+        });
+        return merged;
+    }, [arrets]);
+
     const filteredData = useMemo(() => {
         return arrets.filter(arret => {
             const matchesType =
@@ -126,9 +153,15 @@ const Arrets = () => {
             const normalizedCamion = (arret.camion || '').replace(/\s/g, '').toLowerCase();
             const matchesMatricule = filterMatricule ? normalizedCamion.includes(normalizedFilter) : true;
 
-            return matchesType && matchesMatricule;
+            const rowSites = [
+                extractSiteCode(arret.destination_programmee),
+                extractSiteCode(arret.poiPlanning),
+            ].filter(Boolean);
+            const matchesSite = filterSite === 'ALL' ? true : rowSites.includes(filterSite);
+
+            return matchesType && matchesMatricule && matchesSite;
         });
-    }, [arrets, filterType, filterMatricule]);
+    }, [arrets, filterType, filterMatricule, filterSite]);
 
     const stats = useMemo(() => {
         return {
@@ -217,8 +250,7 @@ const Arrets = () => {
     return (
         <>
             <div className="p-8 max-w-[1600px] mx-auto min-h-screen">
-                {/* Filtres & KPIs */}
-                <div className="mb-6 flex flex-wrap items-center justify-between gap-6 bg-white p-6 rounded-2xl border border-gray-100 shadow-sm">
+                <div className="mb-8 bg-white p-5 rounded-2xl border border-gray-100 shadow-sm">
                     <div className="flex flex-wrap items-center gap-4">
                         <div className="flex bg-gray-100 p-1 rounded-xl">
                             {[
@@ -269,6 +301,15 @@ const Arrets = () => {
                                 className="pl-10 pr-3 py-2.5 border border-gray-200 rounded-xl text-sm w-44 focus:outline-none focus:ring-2 focus:ring-orange-500 transition-all" />
                         </div>
 
+                        <select value={filterSite} onChange={(e) => setFilterSite(e.target.value)}
+                            style={{ minWidth: '210px', height: '40px', padding: '9px 14px', borderRadius: '12px', border: '1px solid #e5e7eb', backgroundColor: '#f9fafb', fontWeight: 400, color: '#6b7280' }}
+                            className="appearance-none focus:outline-none focus:ring-2 focus:ring-orange-500 cursor-pointer text-sm">
+                            <option value="ALL">Tous les sites</option>
+                            {availableSites.map((site) => (
+                                <option key={site} value={site}>{site}</option>
+                            ))}
+                        </select>
+
                         <div className="relative">
                             <select value={filterType} onChange={(e) => setFilterType(e.target.value)}
                                 className="pl-3 pr-10 py-2.5 border border-gray-200 rounded-xl text-sm bg-gray-50 appearance-none focus:outline-none focus:ring-2 focus:ring-orange-500 border-none cursor-pointer font-medium">
@@ -284,20 +325,35 @@ const Arrets = () => {
                         </button>
                     </div>
 
-                    <div className="flex items-center gap-6">
-                        <div className="text-right">
-                            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest leading-tight">Total</p>
-                            <p className="text-xl font-black text-gray-900">{stats.total}</p>
-                        </div>
-                        <div className="w-px h-8 bg-gray-100"></div>
-                        <div className="text-right">
-                            <p className="text-[10px] font-bold text-green-500 uppercase tracking-widest leading-tight">Conformes</p>
-                            <p className="text-xl font-black text-green-600">{stats.c}</p>
-                        </div>
-                        <div className="w-px h-8 bg-gray-100"></div>
-                        <div className="text-right">
-                            <p className="text-[10px] font-bold text-red-500 uppercase tracking-widest leading-tight">Non Conformes</p>
-                            <p className="text-xl font-black text-red-600">{stats.nc}</p>
+                    <div className="mt-4 pt-4 border-t border-gray-100">
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-0 items-center">
+                            <div className="flex items-center gap-3 md:pr-5">
+                                <div className="w-10 h-10 rounded-xl bg-slate-100 text-slate-500 flex items-center justify-center">
+                                    <FiTarget className="text-lg" />
+                                </div>
+                                <div>
+                                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.14em] leading-tight">Total</p>
+                                    <p className="text-[32px] leading-none font-black text-slate-900">{stats.total}</p>
+                                </div>
+                            </div>
+                            <div className="flex items-center gap-3 md:px-5 md:border-l md:border-r md:border-gray-200">
+                                <div className="w-10 h-10 rounded-xl bg-orange-50 text-orange-500 flex items-center justify-center">
+                                    <FiCheckCircle className="text-lg" />
+                                </div>
+                                <div>
+                                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.14em] leading-tight">Conformes</p>
+                                    <p className="text-[32px] leading-none font-black text-orange-600">{stats.c}</p>
+                                </div>
+                            </div>
+                            <div className="flex items-center gap-3 md:pl-5">
+                                <div className="w-10 h-10 rounded-xl bg-red-50 text-red-500 flex items-center justify-center">
+                                    <FiXCircle className="text-lg" />
+                                </div>
+                                <div>
+                                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.14em] leading-tight">Non conformes</p>
+                                    <p className="text-[32px] leading-none font-black text-red-500">{stats.nc}</p>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>

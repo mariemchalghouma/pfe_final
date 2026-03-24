@@ -46,6 +46,8 @@ const segmentColors = {
     inactive:           { bg: '#e2e8f0', label: 'Inactif',           text: '#94a3b8', icon: null,                 dot: '#cbd5e1' },
 };
 
+const SITE_OPTIONS = ['BAR', 'JER', 'GAB', 'SAL', 'CAP', '9901', 'GAS', 'BSL', 'BIZ', 'SFX', 'TUN', 'BKS'];
+
 const fmtTime = (iso) => {
     if (!iso) return '';
     const d = new Date(iso);
@@ -65,6 +67,8 @@ const fmtDurationFromISO = (start, end) => {
     const ms = new Date(end) - new Date(start);
     return fmtDuration(ms / 60000);
 };
+
+const normalizeSite = (value) => (value || '').toString().trim().toUpperCase();
 
 const toNumber = (value) => {
     const n = Number(value);
@@ -567,6 +571,7 @@ const Camions = () => {
     const [ganttDate, setGanttDate] = useState(new Date().toISOString().split('T')[0]);
     const [ganttLoading, setGanttLoading] = useState(false);
     const [ganttSearch, setGanttSearch] = useState('');
+    const [ganttSite, setGanttSite] = useState('ALL');
 
     // Popover state
     const [activePopover, setActivePopover] = useState(null); // { segment, position }
@@ -671,26 +676,44 @@ const Camions = () => {
         loadGantt(ganttDate);
     }, [ganttDate, loadGantt]);
 
+    const availableSites = useMemo(() => {
+        const dynamicSites = new Set(
+            ganttData.flatMap(d => (d.clients || []).map(c => normalizeSite(c.client))).filter(Boolean)
+        );
+
+        const merged = [...SITE_OPTIONS];
+        dynamicSites.forEach((s) => {
+            if (!merged.includes(s)) merged.push(s);
+        });
+
+        return merged;
+    }, [ganttData]);
+
     const filteredGantt = useMemo(() => {
         const q = ganttSearch.toLowerCase().trim();
-        if (!q) return ganttData;
-        return ganttData.filter(d =>
-            d.camion?.toLowerCase().includes(q) ||
-            d.chauffeur?.toLowerCase().includes(q) ||
-            String(d.voycle || '').includes(q) ||
-            d.clients?.some(c => c.client?.toLowerCase().includes(q) || c.code?.toLowerCase().includes(q) || c.region?.toLowerCase().includes(q))
-        );
-    }, [ganttData, ganttSearch]);
+        return ganttData.filter((d) => {
+            const matchesSearch = !q ||
+                d.camion?.toLowerCase().includes(q) ||
+                d.chauffeur?.toLowerCase().includes(q) ||
+                String(d.voycle || '').includes(q) ||
+                d.clients?.some(c => c.client?.toLowerCase().includes(q) || c.code?.toLowerCase().includes(q) || c.region?.toLowerCase().includes(q));
+
+            const matchesSite = ganttSite === 'ALL' ||
+                d.clients?.some(c => normalizeSite(c.client) === ganttSite || normalizeSite(c.code) === ganttSite);
+
+            return matchesSearch && matchesSite;
+        });
+    }, [ganttData, ganttSearch, ganttSite]);
 
     const ganttStats = useMemo(() => {
-        const uniqueCamions = new Set(ganttData.map(d => d.camion));
-        const totalClients = ganttData.reduce((s, d) => s + (d.nbClients || 0), 0);
+        const uniqueCamions = new Set(filteredGantt.map(d => d.camion));
+        const totalClients = filteredGantt.reduce((s, d) => s + (d.nbClients || 0), 0);
         return {
             totalClients,
-            totalVoyages: ganttData.length,
+            totalVoyages: filteredGantt.length,
             totalCamions: uniqueCamions.size,
         };
-    }, [ganttData]);
+    }, [filteredGantt]);
 
     const loadTrajet = useCallback(async (plaque, options = {}) => {
         const { date, color = '#3b82f6' } = options;
@@ -827,6 +850,29 @@ const Camions = () => {
                                     fontSize: '13px', fontFamily: "'Inter', sans-serif", outline: 'none',
                                 }} />
                         </div>
+                        <select
+                            value={ganttSite}
+                            onChange={(e) => setGanttSite(e.target.value)}
+                            style={{
+                                minWidth: '210px',
+                                height: '40px',
+                                padding: '9px 14px',
+                                border: '1px solid #e5e7eb',
+                                borderRadius: '12px',
+                                background: 'white',
+                                fontSize: '13px',
+                                fontWeight: 400,
+                                fontFamily: "'Inter', sans-serif",
+                                color: '#6b7280',
+                                outline: 'none',
+                                cursor: 'pointer',
+                            }}
+                        >
+                            <option value="ALL">Tous les sites</option>
+                            {availableSites.map((site) => (
+                                <option key={site} value={site}>{site}</option>
+                            ))}
+                        </select>
                         <div className="flex items-center gap-2 ml-auto">
                             <span style={{
                                 padding: '5px 12px', borderRadius: '8px', fontSize: '11px', fontWeight: 700,
