@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { FiSearch, FiBarChart2, FiCalendar, FiClock, FiUser, FiTruck, FiX, FiChevronRight, FiMapPin, FiActivity, FiMap } from 'react-icons/fi';
+import { FiSearch, FiBarChart2, FiCalendar, FiClock, FiUser, FiTruck, FiX, FiChevronRight, FiMapPin, FiActivity, FiMap, FiPhone } from 'react-icons/fi';
 import { FaGasPump, FaWarehouse, FaUserTie, FaParking, FaExclamationTriangle, FaDoorOpen, FaCheckCircle, FaTimesCircle } from 'react-icons/fa';
 import { camionsAPI } from '@/services/api';
 import { useMapContext } from '@/context/MapContext';
@@ -384,95 +384,142 @@ const SidePanel = ({ data, onClose, onShowMap }) => {
     const stopTypes = ['stop_conforme', 'stop_non_conforme', 'stop', 'stop_long'];
     const nbStops = segments.filter(s => stopTypes.includes(s.type)).length;
     const hasVoyage = data.voycle != null && String(data.voycle).trim() !== '';
+    const chauffeurPhone = data.telephone && data.telephone !== '—' ? data.telephone : null;
+    const primaryClient = data.clients?.find((c) => c?.client)?.client || data.clients?.[0]?.code || 'Destination non renseignee';
 
     return (
         <div style={{
-            position: 'fixed', top: 0, right: 0, bottom: 0, width: '400px', zIndex: 9998,
-            background: 'white', boxShadow: '-8px 0 40px rgba(0,0,0,0.1)',
-            display: 'flex', flexDirection: 'column', fontFamily: "'Inter', sans-serif",
+            position: 'fixed',
+            top: 0,
+            right: 0,
+            bottom: 0,
+            width: '430px',
+            zIndex: 9998,
+            background: '#f8fafc',
+            boxShadow: '-8px 0 40px rgba(15, 23, 42, 0.14)',
+            display: 'flex',
+            flexDirection: 'column',
+            fontFamily: "'Inter', sans-serif",
             animation: 'slideIn 0.25s ease-out',
         }}>
             <style>{`@keyframes slideIn { from { transform: translateX(100%); } to { transform: translateX(0); } }`}</style>
 
             {/* Header */}
             <div style={{
-                padding: '14px 20px',
-                borderBottom: '1px solid #f3f4f6',
+                padding: '22px 20px 18px',
+                borderBottom: '1px solid #f1f5f9',
                 flexShrink: 0,
-                background: 'linear-gradient(135deg, #f97316, #fb923c)',
+                background: 'linear-gradient(135deg, #ff7f1f 0%, #ff8f3f 100%)',
             }}>
                 <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2.5">
-                        <div className="flex items-center justify-center w-10 h-10 rounded-xl" style={{ background: 'rgba(255,255,255,0.2)' }}>
-                            <FiTruck style={{ color: 'white', fontSize: '18px' }} />
+                    <div className="flex items-center gap-3">
+                        <div className="flex items-center justify-center rounded-xl" style={{ width: '48px', height: '48px', background: 'rgba(255,255,255,0.22)' }}>
+                            <FiTruck style={{ color: 'white', fontSize: '20px' }} />
                         </div>
                         <div>
-                            <p style={{ fontWeight: 800, fontSize: '34px', lineHeight: 1, color: 'white', letterSpacing: '-0.3px' }}>{data.camion}</p>
+                            <p style={{ fontWeight: 800, fontSize: '36px', lineHeight: 1, color: 'white', letterSpacing: '-0.6px' }}>{data.camion}</p>
                             {hasVoyage && (
                                 <p style={{
                                     display: 'inline-flex',
-                                    marginTop: '8px',
-                                    padding: '3px 10px',
+                                    marginTop: '10px',
+                                    padding: '5px 12px',
                                     borderRadius: '999px',
-                                    background: 'rgba(255,255,255,0.25)',
+                                    background: 'rgba(255,255,255,0.24)',
                                     color: 'white',
-                                    fontSize: '16px',
+                                    fontSize: '15px',
                                     fontWeight: 700,
                                     lineHeight: 1,
                                 }}>V{data.voycle}</p>
                             )}
                         </div>
                     </div>
-                    <button onClick={onClose} style={{
-                        width: '32px', height: '32px', borderRadius: '8px', border: 'none',
-                        background: 'transparent', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        color: 'white', opacity: 0.9, transition: 'all 0.15s',
-                    }}>
-                        <FiX size={16} />
+
+                    <button
+                        onClick={onClose}
+                        style={{
+                            width: '30px',
+                            height: '30px',
+                            borderRadius: '8px',
+                            border: 'none',
+                            background: 'transparent',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            color: 'white',
+                            opacity: 0.92,
+                        }}
+                    >
+                        <FiX size={18} />
                     </button>
                 </div>
             </div>
 
-            {/* Info cards */}
-            <div style={{ padding: '12px 14px 8px 14px', borderBottom: '1px solid #f3f4f6', flexShrink: 0 }}>
-                <div style={{ display: 'grid', gridTemplateColumns: '1.1fr 0.9fr', gridTemplateRows: 'repeat(3, minmax(0, 1fr))', gap: '6px' }}>
-                    {/* Chauffeur */}
-                    <div style={{ background: 'white', borderRadius: '12px', padding: '10px 12px', border: '1px solid #d1d5db', gridRow: '1 / span 3' }}>
-                        <div className="flex items-center gap-1.5" style={{ marginBottom: '3px' }}>
-                            <FiUser style={{ color: '#f97316', fontSize: '10px' }} />
-                            <span style={{ fontSize: '8px', color: '#9a3412', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.2px' }}>Chauffeur</span>
-                        </div>
-                        <p style={{ fontSize: '24px', fontWeight: 800, color: '#0f172a', lineHeight: 1.05 }}>{data.chauffeur || '—'}</p>
+            {/* Infos summary */}
+            <div style={{ padding: '14px 20px 10px', borderBottom: '1px solid #e2e8f0', flexShrink: 0, background: 'white' }}>
+                <div style={{
+                    border: '1px solid #d1d5db',
+                    borderRadius: '12px',
+                    padding: '13px 14px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    marginBottom: '10px',
+                }}>
+                    <div className="flex items-center gap-3 min-w-0">
+                        <FiUser style={{ color: '#f97316', fontSize: '16px', flexShrink: 0 }} />
+                        <p className="truncate" style={{ fontSize: '20px', fontWeight: 800, color: '#0f172a', lineHeight: 1 }}>{data.chauffeur || '—'}</p>
                     </div>
-                    {/* Horaires */}
-                    <div style={{ background: 'white', borderRadius: '10px', padding: '8px 10px', border: '1px solid #d1d5db' }}>
-                        <div className="flex items-center gap-1.5" style={{ marginBottom: '3px' }}>
-                            <FiClock style={{ color: '#3b82f6', fontSize: '9px' }} />
-                            <span style={{ fontSize: '7px', color: '#1e40af', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.2px' }}>Horaires</span>
+                    {chauffeurPhone && (
+                        <div className="flex items-center gap-2" style={{ color: '#64748b', flexShrink: 0, marginLeft: '8px' }}>
+                            <FiPhone style={{ fontSize: '14px' }} />
+                            <span style={{ fontSize: '14px', fontWeight: 500 }}>{chauffeurPhone}</span>
                         </div>
-                        <p style={{ fontSize: '17px', fontWeight: 800, color: '#0f172a', lineHeight: 1.1 }}>{data.heureDep || '—'} → {data.heureFin || '—'}</p>
+                    )}
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px' }}>
+                    <div style={{ background: 'white', borderRadius: '12px', padding: '10px', border: '1px solid #c7d2fe' }}>
+                        <div className="flex items-center gap-1.5" style={{ marginBottom: '4px' }}>
+                            <FiClock style={{ color: '#2563eb', fontSize: '12px' }} />
+                            <span style={{ fontSize: '12px', color: '#2563eb', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.4px' }}>Horaires</span>
+                        </div>
+                        <p style={{ fontSize: '18px', fontWeight: 800, color: '#111827', lineHeight: 1.2 }}>{data.heureDep || '—'} → {data.heureFin || '—'}</p>
                     </div>
 
-                    {/* Conduite */}
-                    <div style={{ background: '#f0fdf4', borderRadius: '10px', padding: '8px 10px', border: '1px solid #a7f3d0' }}>
-                        <div className="flex items-center gap-1.5" style={{ marginBottom: '3px' }}>
-                            <FiTruck style={{ color: '#16a34a', fontSize: '9px' }} />
-                            <span style={{ fontSize: '7px', color: '#15803d', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.2px' }}>Conduite</span>
+                    <div style={{ background: '#f0fdf4', borderRadius: '12px', padding: '10px', border: '1px solid #bbf7d0' }}>
+                        <div className="flex items-center gap-1.5" style={{ marginBottom: '4px' }}>
+                            <FiTruck style={{ color: '#16a34a', fontSize: '12px' }} />
+                            <span style={{ fontSize: '12px', color: '#16a34a', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.4px' }}>Conduite</span>
                         </div>
-                        <p style={{ fontSize: '17px', fontWeight: 800, color: '#16a34a', lineHeight: 1.1 }}>
-                            {drivingMin > 0 ? fmtDuration(drivingMin) : '00'}
-                        </p>
+                        <p style={{ fontSize: '26px', fontWeight: 800, color: '#16a34a', lineHeight: 1.2 }}>{drivingMin > 0 ? fmtDuration(drivingMin) : '0h00'}</p>
                     </div>
 
-                    {/* Arrêts */}
-                    <div style={{ background: '#fffbeb', borderRadius: '10px', padding: '8px 10px', border: '1px solid #fcd34d' }}>
-                        <div className="flex items-center gap-1.5" style={{ marginBottom: '3px' }}>
-                            <FaParking style={{ color: '#f59e0b', fontSize: '9px' }} />
-                            <span style={{ fontSize: '7px', color: '#92400e', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.2px' }}>Arrêts</span>
+                    <div style={{ background: '#fffbeb', borderRadius: '12px', padding: '10px', border: '1px solid #fde68a' }}>
+                        <div className="flex items-center gap-1.5" style={{ marginBottom: '4px' }}>
+                            <FaParking style={{ color: '#f59e0b', fontSize: '11px' }} />
+                            <span style={{ fontSize: '12px', color: '#d97706', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.4px' }}>Arrêts</span>
                         </div>
-                        <p style={{ fontSize: '17px', fontWeight: 800, color: '#f59e0b', lineHeight: 1.1 }}>{fmtDuration(stopMin)}</p>
-                        <p style={{ fontSize: '10px', color: '#92400e', fontWeight: 600, marginTop: '1px' }}>{nbStops} arrêt(s)</p>
+                        <p style={{ fontSize: '26px', fontWeight: 800, color: '#d97706', lineHeight: 1.2 }}>{stopMin > 0 ? fmtDuration(stopMin) : '0h00'}</p>
+                        <p style={{ fontSize: '11px', color: '#92400e', fontWeight: 600, marginTop: '2px' }}>{nbStops} arrêt(s)</p>
                     </div>
+                </div>
+
+                <div style={{
+                    marginTop: '10px',
+                    border: '1px solid #fdba74',
+                    borderRadius: '12px',
+                    padding: '10px 12px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    color: '#ea580c',
+                    fontWeight: 700,
+                    background: '#fff7ed',
+                    fontSize: '17px',
+                }}>
+                    <FaWarehouse style={{ fontSize: '15px', flexShrink: 0 }} />
+                    <span className="truncate">{primaryClient}</span>
                 </div>
 
                 <button
@@ -482,9 +529,9 @@ const SidePanel = ({ data, onClose, onShowMap }) => {
                         width: '100%',
                         marginTop: '10px',
                         border: '1px solid #d1d5db',
-                        background: '#f3f4f6',
+                        background: '#f8fafc',
                         borderRadius: '10px',
-                        padding: '10px',
+                        padding: '12px',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
@@ -492,61 +539,56 @@ const SidePanel = ({ data, onClose, onShowMap }) => {
                         color: '#111827',
                         fontWeight: 700,
                         cursor: 'pointer',
+                        fontSize: '16px',
                     }}
                 >
                     <FiMap style={{ fontSize: '16px' }} />
-                    Voir le camion sur la carte
+                    Voir le trajet sur la carte
                 </button>
             </div>
 
-            {/* Timeline segments */}
-            <div style={{ flex: 1, overflowY: 'auto', padding: '12px 20px' }}>
-                <p style={{ fontSize: '10px', fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '10px' }}>
-                    Detail du camion ({segments.length} segments)
+            {/* Timeline */}
+            <div style={{ flex: 1, overflowY: 'auto', padding: '12px 20px 20px', background: 'white' }}>
+                <p style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.8px', marginBottom: '10px' }}>
+                    Detail du trajet
                 </p>
                 <div className="space-y-0">
                     {segments.map((seg, i) => {
                         const segColor = segmentColors[seg.type] || segmentColors.inactive;
-                        const SegIcon = segColor.icon;
                         const dur = seg.duration || Math.round((new Date(seg.end) - new Date(seg.start)) / 60000);
                         return (
-                            <div key={i} className="flex gap-3" style={{ paddingBottom: '2px' }}>
-                                {/* Timeline line */}
-                                <div className="flex flex-col items-center" style={{ width: '24px', flexShrink: 0 }}>
+                            <div key={i} className="flex gap-3" style={{ paddingBottom: '3px' }}>
+                                <div className="flex flex-col items-center" style={{ width: '22px', flexShrink: 0 }}>
                                     <div style={{
-                                        width: '10px', height: '10px', borderRadius: '50%',
-                                        background: segColor.bg, border: '2px solid white',
-                                        boxShadow: `0 0 0 2px ${segColor.bg}30`, flexShrink: 0, zIndex: 1,
+                                        width: '11px',
+                                        height: '11px',
+                                        borderRadius: '50%',
+                                        background: segColor.dot || segColor.bg,
+                                        border: '2px solid white',
+                                        boxShadow: `0 0 0 2px ${segColor.bg}33`,
+                                        zIndex: 1,
                                     }} />
                                     {i < segments.length - 1 && (
-                                        <div style={{ width: '2px', flex: 1, background: '#e5e7eb', marginTop: '-1px' }} />
+                                        <div style={{ width: '2px', flex: 1, background: '#e2e8f0', marginTop: '-1px' }} />
                                     )}
                                 </div>
-                                {/* Content */}
+
                                 <div style={{
-                                    flex: 1, paddingBottom: '14px',
-                                    borderBottom: i < segments.length - 1 ? '1px solid #f9fafb' : 'none',
+                                    flex: 1,
+                                    paddingBottom: '12px',
+                                    borderBottom: i < segments.length - 1 ? '1px solid #f8fafc' : 'none',
                                 }}>
-                                    <div className="flex items-center gap-2 mb-1">
-                                        {SegIcon && <SegIcon style={{ color: segColor.bg, fontSize: '12px' }} />}
-                                        <span style={{ fontWeight: 700, fontSize: '12px', color: '#1a1a2e' }}>{segColor.label}</span>
-                                        <span style={{ fontSize: '10px', color: '#9ca3af', marginLeft: 'auto' }}>
+                                    <div className="flex items-center gap-2" style={{ marginBottom: '2px' }}>
+                                        <span style={{ fontWeight: 700, fontSize: '13px', color: '#0f172a' }}>{segColor.label}</span>
+                                        <span style={{ fontSize: '12px', color: '#64748b', marginLeft: 'auto', whiteSpace: 'nowrap' }}>
                                             {fmtTime(seg.start)} — {fmtTime(seg.end)}
                                         </span>
                                     </div>
-                                    <div className="flex items-center gap-3" style={{ fontSize: '11px', color: '#6b7280' }}>
-                                        <span>{fmtDuration(dur)}</span>
-                                        {seg.poiName && <span>📍 {seg.poiName}</span>}
-                                        {seg.distance != null && <span>{seg.distance}m</span>}
-                                        {seg.conforme != null && seg.type !== 'driving' && (
-                                            <span style={{ color: seg.conforme ? '#22c55e' : '#ef4444', fontWeight: 700 }}>
-                                                {seg.conforme ? '✓' : '✗'}
-                                            </span>
-                                        )}
+                                    <div className="flex items-center gap-2" style={{ fontSize: '12px', color: '#64748b' }}>
+                                        {seg.poiName && <span>{seg.poiName}</span>}
+                                        {!seg.poiName && seg.address && seg.address !== '—' && <span>{seg.address}</span>}
+                                        {!seg.poiName && (!seg.address || seg.address === '—') && <span>{fmtDuration(dur)}</span>}
                                     </div>
-                                    {seg.address && seg.address !== '—' && (
-                                        <p style={{ fontSize: '10px', color: '#9ca3af', marginTop: '2px' }}>{seg.address}</p>
-                                    )}
                                 </div>
                             </div>
                         );
