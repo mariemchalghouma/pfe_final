@@ -78,23 +78,41 @@ const toNumber = (value) => {
 const buildVoyageMapPoints = (voyageData, trajetPoints = []) => {
     const points = [];
 
-    trajetPoints.forEach((pt, idx) => {
-        const lat = toNumber(pt.latitude ?? pt.lat);
-        const lng = toNumber(pt.longitude ?? pt.lng);
-        if (lat == null || lng == null) return;
+    // trajetPoints can be [[lat,lng], ...] arrays or {latitude, longitude} objects
+    const getLat = (pt) => Array.isArray(pt) ? toNumber(pt[0]) : toNumber(pt.latitude ?? pt.lat);
+    const getLng = (pt) => Array.isArray(pt) ? toNumber(pt[1]) : toNumber(pt.longitude ?? pt.lng);
 
-        const at = pt.gps_timestamp ? fmtTime(pt.gps_timestamp) : null;
-        points.push({
-            id: `gps-${idx}`,
-            lat,
-            lng,
-            label: idx === 0 ? 'Départ camion' : idx === trajetPoints.length - 1 ? 'Arrivée camion' : `Point GPS #${idx + 1}`,
-            info: at ? `Horodatage: ${at}` : 'Point GPS',
-            color: idx === 0 ? '#22c55e' : idx === trajetPoints.length - 1 ? '#ef4444' : '#3b82f6',
-        });
-    });
+    if (trajetPoints.length > 0) {
+        const first = trajetPoints[0];
+        const last = trajetPoints[trajetPoints.length - 1];
+
+        const lat1 = getLat(first);
+        const lng1 = getLng(first);
+        if (lat1 != null && lng1 != null) {
+            points.push({
+                id: 'gps-depart', lat: lat1, lng: lng1,
+                label: 'Départ camion',
+                info: 'Départ',
+                color: '#22c55e',
+            });
+        }
+
+        if (trajetPoints.length > 1) {
+            const lat2 = getLat(last);
+            const lng2 = getLng(last);
+            if (lat2 != null && lng2 != null) {
+                points.push({
+                    id: 'gps-arrivee', lat: lat2, lng: lng2,
+                    label: 'Arrivée camion',
+                    info: 'Arrivée',
+                    color: '#ef4444',
+                });
+            }
+        }
+    }
 
     (voyageData?.segments || []).forEach((seg, idx) => {
+        if (seg.type === 'driving') return; // Ne pas afficher la conduite comme un point unique
         const lat = toNumber(seg.lat);
         const lng = toNumber(seg.lng);
         if (lat == null || lng == null) return;
@@ -623,6 +641,7 @@ const Camions = () => {
     const [selectedVoyageId, setSelectedVoyageId] = useState(null);
     const [isRouteMapOpen, setIsRouteMapOpen] = useState(false);
     const [selectedRoutePoints, setSelectedRoutePoints] = useState([]);
+    const [selectedRoutePath, setSelectedRoutePath] = useState([]);
 
     const loadCamions = useCallback(async () => {
         setLoading(true);
@@ -651,43 +670,41 @@ const Camions = () => {
 
             setMapData({ markers, polylines: [], flyTo: null, selectedMarkerId: null });
 
-            // Reverse geocoding runs in background to avoid blocking the page loader.
-            const addressPromises = camionsData
-                .filter((c) => c.lat != null && c.lng != null)
-                .map(async (camion) => {
-                    const address = await reverseGeocode(camion.lat, camion.lng);
-                    return { plaque: camion.plaque, address };
-                });
+            // Reverse geocoding runs sequentially to respect Nominatim limits (1 req/sec) and avoid freezing the browser.
+            const fetchAddressesSequentially = async () => {
+                const currentAddresses = new Map();
+                const toGeocode = camionsData.filter((c) => c.lat != null && c.lng != null);
 
-            Promise.allSettled(addressPromises).then((results) => {
-                const resolved = results
-                    .filter((r) => r.status === 'fulfilled' && r.value?.address)
-                    .map((r) => r.value);
-
-                if (resolved.length === 0) return;
-
-                const newAddresses = new Map(resolved.map(({ plaque, address }) => [plaque, address]));
-                setAddresses(newAddresses);
-
-                setMapData({
-                    markers: camionsData
-                        .filter((c) => c.lat != null && c.lng != null)
-                        .map((camion) => {
-                            const config = statusConfig[camion.statut] || statusConfig.unknown;
-                            return {
-                                id: camion.plaque,
-                                lat: camion.lat,
-                                lng: camion.lng,
-                                icon: getStatusIcon(camion.statut),
-                                label: camion.plaque,
-                                sublabel: camion.chauffeur || '—',
-                                info: `📍 ${newAddresses.get(camion.plaque) || camion.localisation || '—'} · ${camion.vitesse ?? 0} km/h`,
-                                badgeLabel: config.label,
-                                badgeColor: config.color,
-                            };
-                        }),
-                });
-            });
+                for (const camion of toGeocode) {
+                    try {
+                        const address = await reverseGeocode(camion.lat, camion.lng);
+                        if (address && address !== '—' && !address.match(/^[0-9.-]+,\s*[0-9.-]+$/)) {
+                            currentAddresses.set(camion.plaque, address);
+                            setAddresses(new Map(currentAddresses));
+                            
+                            // Update map markers incrementally
+                            setMapData(prev => {
+                                if (!prev || !prev.markers) return prev;
+                                return {
+                                    ...prev,
+                                    markers: prev.markers.map(m => 
+                                        m.id === camion.plaque 
+                                            ? { ...m, info: `📍 ${address} · ${camion.vitesse ?? 0} km/h` } 
+                                            : m
+                                    )
+                                };
+                            });
+                        }
+                    } catch (err) {
+                        console.warn('Geocoding err', err);
+                    }
+                    // Attendre 1.1s entre chaque requête API OpenStreetMap (limite de 1 req/s)
+                    await new Promise(r => setTimeout(r, 1100));
+                }
+            };
+            
+            // Start the fetching process in the background without blocking the main thread
+            fetchAddressesSequentially();
         } catch (err) {
             setError(err.message || 'Impossible de charger les camions');
             setCamions([]);
@@ -824,6 +841,12 @@ const Camions = () => {
         }
 
         setSelectedRoutePoints(buildVoyageMapPoints(voyageData, trajetPoints));
+        
+        // Extract lat/lng for the Polyline (trajetPoints = [[lat,lng], ...])
+        const path = trajetPoints
+            .map(pt => Array.isArray(pt) ? [toNumber(pt[0]), toNumber(pt[1])] : [toNumber(pt.latitude ?? pt.lat), toNumber(pt.longitude ?? pt.lng)])
+            .filter(coord => coord[0] != null && coord[1] != null);
+        setSelectedRoutePath(path);
     }, [camions, ganttDate, handleSelectCamion, loadTrajet, setFlyTo]);
 
     /* ═══ Hours axis ═══ */
@@ -1038,6 +1061,7 @@ const Camions = () => {
                 isOpen={isRouteMapOpen}
                 onClose={() => setIsRouteMapOpen(false)}
                 positions={selectedRoutePoints}
+                routePath={selectedRoutePath}
                 title={selectedVoyage ? `Camion ${selectedVoyage.camion} - Voyage ${selectedVoyage.voycle || '—'}` : 'Camion sur la carte'}
             />
         </div>

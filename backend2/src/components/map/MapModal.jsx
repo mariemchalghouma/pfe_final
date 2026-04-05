@@ -21,6 +21,10 @@ const Popup = dynamic(
     () => import('react-leaflet').then(mod => mod.Popup),
     { ssr: false }
 );
+const Polyline = dynamic(
+    () => import('react-leaflet').then(mod => mod.Polyline),
+    { ssr: false }
+);
 
 const createIcon = (color) => {
     if (typeof window === 'undefined') return null;
@@ -196,7 +200,7 @@ const ClusteredMarkers = ({ validPositions }) => {
     );
 };
 
-const MapModal = ({ isOpen, onClose, positions = [], center, zoom = 13, title = 'Localisation sur la carte' }) => {
+const MapModal = ({ isOpen, onClose, positions = [], routePath = [], center, zoom = 13, title = 'Localisation sur la carte' }) => {
     const validPositions = useMemo(() => positions.filter(pos => !isNaN(pos.lat) && !isNaN(pos.lng)), [positions]);
 
     useEffect(() => {
@@ -237,6 +241,12 @@ const MapModal = ({ isOpen, onClose, positions = [], center, zoom = 13, title = 
                             attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
                             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
                         />
+                        {routePath && routePath.length > 0 && (
+                            <Polyline
+                                positions={routePath}
+                                pathOptions={{ color: '#3b82f6', weight: 4, opacity: 0.8 }}
+                            />
+                        )}
                         <ClusteredMarkers validPositions={validPositions} />
                     </MapContainer>
                 </div>

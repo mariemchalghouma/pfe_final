@@ -322,20 +322,15 @@ export const getCamionsGantt = async (date) => {
       return Response.json({ success: true, data: [], date: targetDate });
     }
 
-    // 2) Stops with GPS average position
+    // 2) Stops
     const stopsResult = await pool.query(`
-      SELECT
-        s.camion, s.beginstoptime, s.endstoptime, s.stopduration,
-        s.latitude, s.longitude, s.address,
-        AVG(g.latitude) AS avg_lat, AVG(g.longitude) AS avg_lng
-      FROM voyage_tracking_stops s
-      LEFT JOIN local_histo_gps_all g ON
-        REPLACE(g.camion, ' ', '') = REPLACE(s.camion, ' ', '') AND
-        g.gps_timestamp BETWEEN s.beginstoptime AND s.endstoptime
-      WHERE DATE(s.beginstoptime) = $1
-      GROUP BY s.camion, s.beginstoptime, s.endstoptime, s.stopduration,
-               s.latitude, s.longitude, s.address
-      ORDER BY s.camion, s.beginstoptime ASC
+      SELECT DISTINCT
+        camion, beginstoptime, endstoptime, stopduration,
+        latitude, longitude, address,
+        latitude AS avg_lat, longitude AS avg_lng
+      FROM voyage_tracking_stops
+      WHERE DATE(beginstoptime) = $1
+      ORDER BY camion, beginstoptime ASC
     `, [targetDate]);
 
     // 3) POI pour le calcul de conformité
@@ -671,7 +666,8 @@ export const getCamionTrajet = async (camion, date) => {
 
     const trajet = result.rows
       .filter((item) => item.latitude != null && item.longitude != null)
-      .map((item) => [Number(item.latitude), Number(item.longitude)]);
+      .map((item) => [Number(item.latitude), Number(item.longitude)])
+      .filter((pt, i, arr) => i === 0 || pt[0] !== arr[i - 1][0] || pt[1] !== arr[i - 1][1]);
 
     return Response.json({ success: true, data: trajet });
   } catch (error) {

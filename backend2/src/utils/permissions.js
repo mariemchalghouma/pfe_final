@@ -57,7 +57,7 @@ const allAllowedPathsForUser = (user) => {
 };
 
 export const canAccessPath = (user, pathname = '') => {
-  if (!pathname || pathname === '/') return true;
+  if (!pathname || pathname === '/' || pathname === '/mon-compte') return true;
 
   const allowedPaths = allAllowedPathsForUser(user);
 

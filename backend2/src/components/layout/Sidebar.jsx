@@ -5,11 +5,11 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname, useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
-import { canAccessPath } from '@/utils/permissions';
+import { canAccessPath, isAdminUser, normalizeRoles } from '@/utils/permissions';
 import {
     FiGrid, FiTruck, FiStopCircle, FiUnlock, FiRadio,
     FiDroplet, FiMapPin,
-    FiSettings, FiLogOut, FiMenu, FiShield
+    FiSettings, FiLogOut, FiMenu, FiShield, FiUser
 } from 'react-icons/fi';
 
 // Context for sidebar state
@@ -111,8 +111,12 @@ const Sidebar = () => {
 
             {/* Footer */}
             <div className="p-4 border-t border-gray-100 flex flex-col gap-2 mt-auto">
-                {/* User Avatar Section */}
-                <div className={`flex items-center overflow-hidden mb-2 ${isCollapsed ? 'justify-center w-full' : 'gap-3 px-2'}`}>
+                {/* User Avatar Section — clickable, navigates to /mon-compte */}
+                <Link
+                    href="/mon-compte"
+                    className={`flex items-center overflow-hidden mb-2 cursor-pointer rounded-lg hover:bg-orange-50 transition-colors p-1.5 no-underline ${isCollapsed ? 'justify-center w-full' : 'gap-3 px-2'}`}
+                    title="Mon compte"
+                >
                     <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-orange-400 to-orange-500 flex items-center justify-center text-white font-bold text-sm shadow-sm flex-shrink-0">
                         {user?.identifiant ? user.identifiant.substring(0, 2).toUpperCase() : 'AP'}
                     </div>
@@ -122,7 +126,7 @@ const Sidebar = () => {
                             <span className="text-xs text-gray-500 truncate capitalize">{user?.type || 'Administrateur'}</span>
                         </div>
                     )}
-                </div>
+                </Link>
 
                 <div className="w-full h-px bg-gray-100 my-1"></div>
 
