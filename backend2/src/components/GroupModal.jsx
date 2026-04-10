@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { FiX } from 'react-icons/fi';
 
 const COLORS = [
@@ -8,26 +8,16 @@ const COLORS = [
     '#3b82f6', '#6366f1', '#8b5cf6', '#ec4899', '#6b7280'
 ];
 
+const buildGroupFormData = (data = null) => ({
+    nom: data?.nom ?? '',
+    description: data?.description ?? '',
+    couleur: data?.couleur ?? COLORS[0]
+});
+
 const GroupModal = ({ isOpen, onClose, initialData, onSubmit }) => {
+    const [formData, setFormData] = useState(() => buildGroupFormData(initialData));
+
     if (!isOpen) return null;
-
-    const [formData, setFormData] = useState({
-        nom: '',
-        description: '',
-        couleur: COLORS[0]
-    });
-
-    useEffect(() => {
-        if (initialData) {
-            setFormData({
-                nom: initialData.nom || '',
-                description: initialData.description || '',
-                couleur: initialData.couleur || COLORS[0]
-            });
-        } else {
-            setFormData({ nom: '', description: '', couleur: COLORS[0] });
-        }
-    }, [initialData, isOpen]);
 
     const handleSubmit = (e) => {
         e.preventDefault();

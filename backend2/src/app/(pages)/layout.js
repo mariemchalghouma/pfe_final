@@ -1,98 +1,77 @@
-'use client';
+"use client";
 
-import { useState, useEffect } from 'react';
-import { usePathname, useRouter } from 'next/navigation';
-import { useAuth } from '@/context/AuthContext';
-import Sidebar, { SidebarContext, useSidebar } from '@/components/layout/Sidebar';
-import { canAccessPath, getDefaultAuthorizedPath, isActiveUser } from '@/utils/permissions';
-import { FiMenu } from 'react-icons/fi';
-import NotificationsDropdown from '@/components/ui/NotificationsDropdown';
+import { useState, useEffect } from "react";
+import { usePathname, useRouter } from "next/navigation";
+import { useAuth } from "@/context/AuthContext";
+import Sidebar, {
+  SidebarContext,
+  useSidebar,
+} from "@/components/layout/Sidebar";
+import TopNavbar from "@/components/layout/TopNavbar";
+import {
+  canAccessPath,
+  getDefaultAuthorizedPath,
+  isActiveUser,
+} from "@/utils/permissions";
 
 const DashboardContent = ({ children }) => {
-    const { isCollapsed, toggleCollapsed } = useSidebar();
-    const { user } = useAuth();
+  const { isCollapsed } = useSidebar();
 
-    const displayName = user?.identifiant || user?.name || user?.username || 'Utilisateur';
-    const initials = (displayName || 'UT')
-        .split(/\s+/)
-        .filter(Boolean)
-        .slice(0, 2)
-        .map(part => part[0])
-        .join('')
-        .toUpperCase();
-
-    return (
-        <div className="flex h-screen bg-gray-50 overflow-hidden">
-            <Sidebar />
-            <main
-                className="flex-1 flex flex-col h-screen overflow-hidden transition-all duration-300"
-                style={{ marginLeft: isCollapsed ? '68px' : '220px' }}
-            >
-                <header className="h-[78px] bg-white border-b border-gray-200 px-6 flex items-center justify-between">
-                    <button
-                        onClick={toggleCollapsed}
-                        className="p-2 rounded-lg hover:bg-gray-100 text-gray-700 transition-colors"
-                        title="Basculer le menu"
-                    >
-                        <FiMenu className="text-lg" />
-                    </button>
-
-                    <div className="flex items-center gap-4">
-                        <NotificationsDropdown />
-                        <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-full bg-orange-50 text-orange-500 flex items-center justify-center text-sm font-bold">
-                                {initials}
-                            </div>
-                            <span className="text-lg font-semibold text-gray-900 leading-none">
-                                {displayName}
-                            </span>
-                        </div>
-                    </div>
-                </header>
-                <div className="flex-1 overflow-y-auto">
-                    {children}
-                </div>
-            </main>
-        </div>
-    );
+  return (
+    <div className="flex h-screen bg-[#f3f4f6] overflow-hidden">
+      <Sidebar />
+      <main
+        className="flex-1 flex flex-col h-screen overflow-hidden transition-all duration-300"
+        style={{ marginLeft: isCollapsed ? "84px" : "258px" }}
+      >
+        <TopNavbar />
+        <div className="flex-1 overflow-y-auto">{children}</div>
+      </main>
+    </div>
+  );
 };
 
 export default function DashboardLayout({ children }) {
-    const { isAuthenticated, loading, user, logout } = useAuth();
-    const router = useRouter();
-    const pathname = usePathname();
-    const [isCollapsed, setIsCollapsed] = useState(false);
+  const { isAuthenticated, loading, user, logout } = useAuth();
+  const router = useRouter();
+  const pathname = usePathname();
+  const [isCollapsed, setIsCollapsed] = useState(false);
 
-    useEffect(() => {
-        if (!loading && !isAuthenticated) {
-            router.push('/login');
-            return;
-        }
-
-        if (!loading && user && !isActiveUser(user)) {
-            logout();
-            router.push('/login');
-            return;
-        }
-
-        if (!loading && user && pathname && !canAccessPath(user, pathname)) {
-            router.push(getDefaultAuthorizedPath(user));
-        }
-    }, [isAuthenticated, loading, pathname, router, user, logout]);
-
-    if (loading) {
-        return (
-            <div className="flex items-center justify-center h-screen bg-gray-50">
-                <div className="w-10 h-10 border-4 border-orange-500 border-t-transparent rounded-full animate-spin"></div>
-            </div>
-        );
+  useEffect(() => {
+    if (!loading && !isAuthenticated) {
+      router.push("/login");
+      return;
     }
 
-    if (!isAuthenticated) return null;
+    if (!loading && user && !isActiveUser(user)) {
+      logout();
+      router.push("/login");
+      return;
+    }
 
+    if (!loading && user && pathname && !canAccessPath(user, pathname)) {
+      router.push(getDefaultAuthorizedPath(user));
+    }
+  }, [isAuthenticated, loading, pathname, router, user, logout]);
+
+  if (loading) {
     return (
-        <SidebarContext.Provider value={{ isCollapsed, toggleCollapsed: () => setIsCollapsed(prev => !prev) }}>
-            <DashboardContent>{children}</DashboardContent>
-        </SidebarContext.Provider>
+      <div className="flex items-center justify-center h-screen bg-gray-50">
+        <div className="w-10 h-10 border-4 border-orange-500 border-t-transparent rounded-full animate-spin"></div>
+      </div>
     );
+  }
+
+  if (!isAuthenticated) return null;
+
+  return (
+    <SidebarContext.Provider
+      value={{
+        isCollapsed,
+        toggleCollapsed: () => setIsCollapsed((prev) => !prev),
+      }}
+    >
+      <DashboardContent>{children}</DashboardContent>
+    </SidebarContext.Provider>
+  );
 }

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { FiX, FiCheck } from 'react-icons/fi';
 
 const ROLES_OPTIONS = [
@@ -11,39 +11,19 @@ const ROLES_OPTIONS = [
     { id: 'poi', label: 'Gestion POI', color: 'bg-purple-50 text-purple-600 border-purple-100', description: 'Page POI' },
 ];
 
-const UserModal = ({ isOpen, onClose, onSubmit, initialData }) => {
-    const [formData, setFormData] = useState({
-        first_name: '',
-        last_name: '',
-        identifiant: '',
-        email: '',
-        phone: '',
-        password: '',
-        roles: [],
-        status: 'Actif'
-    });
+const buildUserFormData = (data = null) => ({
+    first_name: data?.first_name ?? '',
+    last_name: data?.last_name ?? '',
+    identifiant: data?.identifiant ?? '',
+    email: data?.email ?? '',
+    phone: data?.phone ?? '',
+    password: '',
+    roles: Array.isArray(data?.roles) ? data.roles : [],
+    status: data?.status ?? 'Actif'
+});
 
-    useEffect(() => {
-        if (initialData) {
-            setFormData({
-                identifiant: '',
-                ...initialData,
-                password: '',
-                roles: initialData.roles || []
-            });
-        } else {
-            setFormData({
-                first_name: '',
-                last_name: '',
-                identifiant: '',
-                email: '',
-                phone: '',
-                password: '',
-                roles: [],
-                status: 'Actif'
-            });
-        }
-    }, [initialData, isOpen]);
+const UserModal = ({ isOpen, onClose, onSubmit, initialData }) => {
+    const [formData, setFormData] = useState(() => buildUserFormData(initialData));
 
     if (!isOpen) return null;
 
@@ -54,9 +34,10 @@ const UserModal = ({ isOpen, onClose, onSubmit, initialData }) => {
 
     const handleRoleToggle = (roleId) => {
         setFormData(prev => {
-            const roles = prev.roles.includes(roleId)
-                ? prev.roles.filter(r => r !== roleId)
-                : [...prev.roles, roleId];
+            const currentRoles = Array.isArray(prev.roles) ? prev.roles : [];
+            const roles = currentRoles.includes(roleId)
+                ? currentRoles.filter(r => r !== roleId)
+                : [...currentRoles, roleId];
             return { ...prev, roles };
         });
     };
@@ -140,14 +121,14 @@ const UserModal = ({ isOpen, onClose, onSubmit, initialData }) => {
 
                         {/* Roles Section */}
                         <div className="space-y-4">
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Rôles d'accès</label>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Rôles d&apos;accès</label>
                             <div className="grid grid-cols-1 gap-2">
                                 {ROLES_OPTIONS.map(role => (
                                     <div key={role.id} onClick={() => handleRoleToggle(role.id)}
-                                        className={`flex items-center justify-between p-3 rounded-xl border cursor-pointer transition-all ${formData.roles.includes(role.id) ? 'border-orange-200 bg-orange-50/30' : 'border-gray-50 bg-white hover:border-gray-100'}`}>
+                                        className={`flex items-center justify-between p-3 rounded-xl border cursor-pointer transition-all ${(formData.roles || []).includes(role.id) ? 'border-orange-200 bg-orange-50/30' : 'border-gray-50 bg-white hover:border-gray-100'}`}>
                                         <div className="flex items-center gap-3">
-                                            <div className={`w-5 h-5 rounded-lg border flex items-center justify-center transition-all ${formData.roles.includes(role.id) ? 'bg-orange-500 border-orange-500 text-white' : 'border-gray-200 bg-white'}`}>
-                                                {formData.roles.includes(role.id) && <FiCheck size={12} />}
+                                            <div className={`w-5 h-5 rounded-lg border flex items-center justify-center transition-all ${(formData.roles || []).includes(role.id) ? 'bg-orange-500 border-orange-500 text-white' : 'border-gray-200 bg-white'}`}>
+                                                {(formData.roles || []).includes(role.id) && <FiCheck size={12} />}
                                             </div>
                                             <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${role.color}`}>{role.label}</span>
                                         </div>

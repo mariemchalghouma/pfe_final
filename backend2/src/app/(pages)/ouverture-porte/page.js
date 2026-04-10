@@ -1,9 +1,16 @@
 "use client";
 
-import { useMemo, useState, useEffect, useCallback } from 'react';
-import { FiCheckCircle, FiXCircle, FiMapPin, FiFilter, FiMap } from 'react-icons/fi';
-import { ouverturesAPI } from '@/services/api';
-import MapModal from '@/components/map/MapModal';
+import { useMemo, useState, useEffect, useCallback } from "react";
+import {
+  FiTarget,
+  FiCheckCircle,
+  FiXCircle,
+  FiMapPin,
+  FiFilter,
+  FiMap,
+} from "react-icons/fi";
+import { ouverturesAPI } from "@/services/api";
+import MapModal from "@/components/map/MapModal";
 import {
   LineChart,
   Line,
@@ -320,25 +327,27 @@ const OuverturePorte = () => {
     setIsMapOpen(true);
   };
 
-    return (
-        <>
-            <div className="p-6">
-
-                <div className="mb-6 flex flex-wrap items-center justify-between gap-6 bg-white p-6 rounded-2xl border border-gray-100 shadow-sm">
-                    <div className="flex flex-wrap items-center gap-4">
-                        <div className="flex bg-gray-100 p-1 rounded-xl">
-                            {[
-                                { id: 'day', label: 'Jour' },
-                                { id: 'range', label: 'Plage' },
-                                { id: 'week', label: 'Semaine' },
-                                { id: 'month', label: 'Mois' },
-                            ].map((mode) => (
-                                <button key={mode.id} onClick={() => setDateFilterMode(mode.id)}
-                                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${dateFilterMode === mode.id ? 'bg-white text-orange-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
-                                    {mode.label}
-                                </button>
-                            ))}
-                        </div>
+  return (
+    <>
+      <div className="p-6">
+        <div className="mb-8 p-1">
+          <div className="flex flex-wrap items-center gap-4">
+            <div className="flex bg-gray-100 p-1 rounded-xl">
+              {[
+                { id: "day", label: "Jour" },
+                { id: "range", label: "Plage" },
+                { id: "week", label: "Semaine" },
+                { id: "month", label: "Mois" },
+              ].map((mode) => (
+                <button
+                  key={mode.id}
+                  onClick={() => setDateFilterMode(mode.id)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${dateFilterMode === mode.id ? "bg-white text-orange-600 shadow-sm" : "text-gray-500 hover:text-gray-700"}`}
+                >
+                  {mode.label}
+                </button>
+              ))}
+            </div>
 
             <div className="flex items-center gap-2">
               {dateFilterMode === "day" && (
@@ -419,23 +428,50 @@ const OuverturePorte = () => {
             </button>
           </div>
 
-                    <div className="flex items-center gap-6">
-                        <div className="text-right">
-                            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest leading-tight">Total</p>
-                            <p className="text-xl font-black text-gray-900">{stats.total}</p>
-                        </div>
-                        <div className="w-px h-8 bg-gray-100"></div>
-                        <div className="text-right">
-                            <p className="text-[10px] font-bold text-green-500 uppercase tracking-widest leading-tight">Conformes</p>
-                            <p className="text-xl font-black text-green-600">{stats.conformes}</p>
-                        </div>
-                        <div className="w-px h-8 bg-gray-100"></div>
-                        <div className="text-right">
-                            <p className="text-[10px] font-bold text-red-500 uppercase tracking-widest leading-tight">Non conformes</p>
-                            <p className="text-xl font-black text-red-600">{stats.nonConformes}</p>
-                        </div>
-                    </div>
+          <div className="mt-4 pt-4 border-t border-gray-200/70">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-0 items-center">
+              <div className="flex items-center gap-3 md:pr-5">
+                <div className="w-10 h-10 rounded-xl bg-slate-100 text-slate-500 flex items-center justify-center">
+                  <FiTarget className="text-lg" />
                 </div>
+                <div>
+                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.14em] leading-tight">
+                    Total
+                  </p>
+                  <p className="text-[32px] leading-none font-black text-slate-900">
+                    {stats.total}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3 md:px-5 md:border-l md:border-r md:border-gray-200">
+                <div className="w-10 h-10 rounded-xl bg-orange-50 text-orange-500 flex items-center justify-center">
+                  <FiCheckCircle className="text-lg" />
+                </div>
+                <div>
+                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.14em] leading-tight">
+                    Conformes
+                  </p>
+                  <p className="text-[32px] leading-none font-black text-orange-600">
+                    {stats.conformes}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3 md:pl-5">
+                <div className="w-10 h-10 rounded-xl bg-red-50 text-red-500 flex items-center justify-center">
+                  <FiXCircle className="text-lg" />
+                </div>
+                <div>
+                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.14em] leading-tight">
+                    Non conformes
+                  </p>
+                  <p className="text-[32px] leading-none font-black text-red-500">
+                    {stats.nonConformes}
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
 
         {filteredData.length > 0 && (
           <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm mb-8">

@@ -23,17 +23,39 @@ const Polygon = dynamic(
 const useMapEvents = typeof window !== 'undefined'
     ? require('react-leaflet').useMapEvents
     : () => null;
-const useMap = typeof window !== 'undefined'
-    ? require('react-leaflet').useMap
-    : () => null;
+
+const normalizePolygonPoint = (point) => {
+    if (!point) return null;
+    const lat = Number(point.lat ?? point[0]);
+    const lng = Number(point.lng ?? point[1]);
+    if (Number.isNaN(lat) || Number.isNaN(lng)) return null;
+    return { lat, lng };
+};
+
+const normalizePolygonPoints = (points = []) =>
+    points.map(normalizePolygonPoint).filter(Boolean);
+
+const getPolygonCentroid = (points = []) => {
+    const normalized = normalizePolygonPoints(points);
+    if (normalized.length === 0) return { lat: '', lng: '' };
+
+    const total = normalized.reduce(
+        (acc, point) => ({ lat: acc.lat + point.lat, lng: acc.lng + point.lng }),
+        { lat: 0, lng: 0 },
+    );
+
+    return {
+        lat: (total.lat / normalized.length).toFixed(6),
+        lng: (total.lng / normalized.length).toFixed(6),
+    };
+};
 
 // Helper to update map view when coords change
 const RecenterMap = ({ lat, lng }) => {
-    if (typeof window === 'undefined') return null;
     const { useMap: useMapHook } = require('react-leaflet');
     const map = useMapHook();
     useEffect(() => {
-        if (lat && lng) {
+        if (map && lat && lng) {
             map.flyTo([lat, lng], 15);
         }
     }, [lat, lng, map]);
@@ -41,17 +63,16 @@ const RecenterMap = ({ lat, lng }) => {
 };
 
 // Component to handle map clicks
-const LocationPicker = ({ mode, onLocationSelect, currentPos, polygonPoints, setPolygonPoints }) => {
-    if (typeof window === 'undefined') return null;
+const LocationPicker = ({ mode, onLocationSelect, currentPos, polygonPoints, onAddPolygonPoint, onMovePolygonPoint }) => {
     const { useMapEvents: useMapEventsHook } = require('react-leaflet');
-    const L = require('leaflet');
+    const L = typeof window !== 'undefined' ? require('leaflet') : null;
 
     useMapEventsHook({
         click(e) {
             if (mode === 'point') {
                 onLocationSelect(e.latlng);
             } else {
-                setPolygonPoints(prev => [...prev, e.latlng]);
+                onAddPolygonPoint(e.latlng);
             }
         },
     });
@@ -82,7 +103,7 @@ const LocationPicker = ({ mode, onLocationSelect, currentPos, polygonPoints, set
 
     return (
         <>
-            {mode === 'point' && currentPos && (
+            {mode === 'point' && currentPos && L && (
                 <Marker
                     position={currentPos}
                     draggable={true}
@@ -92,15 +113,23 @@ const LocationPicker = ({ mode, onLocationSelect, currentPos, polygonPoints, set
                     }}
                 />
             )}
-            {mode === 'zone' && polygonPoints.length > 0 && (
+            {mode === 'zone' && polygonPoints.length > 0 && L && (
                 <>
                     {polygonPoints.map((pt, idx) => (
-                        <Marker key={idx} position={pt} icon={
-                            L.divIcon({
-                                className: 'bg-transparent',
-                                html: `<div style="width: 10px; height: 10px; background: orange; border-radius: 50%; border: 2px solid white;"></div>`
-                            })
-                        } />
+                        <Marker
+                            key={idx}
+                            position={pt}
+                            draggable={true}
+                            icon={
+                                L.divIcon({
+                                    className: 'bg-transparent',
+                                    html: `<div style="width: 10px; height: 10px; background: orange; border-radius: 50%; border: 2px solid white;"></div>`
+                                })
+                            }
+                            eventHandlers={{
+                                dragend: (e) => onMovePolygonPoint(idx, e.target.getLatLng()),
+                            }}
+                        />
                     ))}
                     <Polygon positions={polygonPoints} color="orange" />
                 </>
@@ -109,50 +138,39 @@ const LocationPicker = ({ mode, onLocationSelect, currentPos, polygonPoints, set
     );
 };
 
-const PoiModal = ({ isOpen, onClose, initialData, groups = [], onSubmit }) => {
-    if (!isOpen) return null;
+const buildInitialPolygon = (initialData) =>
+    normalizePolygonPoints(
+        initialData?.polygon || initialData?.coordinates || initialData?.polygon_points || [],
+    );
 
-    const [formData, setFormData] = useState({
-        code: '',
-        type: 'Point',
-        groupe: groups[0]?.nom || 'Dépôt',
-        lat: '',
-        lng: '',
-        description: '',
-        rayon: '',
-        nouveauGroupe: ''
-    });
+const buildInitialFormData = (initialData, groups) => {
+    const initialPolygon = buildInitialPolygon(initialData);
+    const centroid = getPolygonCentroid(initialPolygon);
+
+    return {
+        code: initialData?.code || '',
+        type: initialData?.type || (initialPolygon.length > 0 ? 'Polygone' : 'Point'),
+        groupe: initialData?.groupe || (groups[0]?.nom || 'Dépôt'),
+        lat: initialPolygon.length > 0
+            ? (initialData?.lat?.toString() || centroid.lat)
+            : (initialData?.lat?.toString() || ''),
+        lng: initialPolygon.length > 0
+            ? (initialData?.lng?.toString() || centroid.lng)
+            : (initialData?.lng?.toString() || ''),
+        description: initialData?.description || '',
+        rayon: initialData?.rayon !== null && initialData?.rayon !== undefined ? initialData.rayon.toString() : '',
+        nouveauGroupe: '',
+        nouveauGroupeDescription: '',
+    };
+};
+
+const PoiModal = ({ isOpen, onClose, initialData, groups = [], onSubmit }) => {
+    const [formData, setFormData] = useState(() => buildInitialFormData(initialData, groups));
 
     const [isAddingGroup, setIsAddingGroup] = useState(false);
 
-    const [mode, setMode] = useState('point');
-    const [polygonPoints, setPolygonPoints] = useState([]);
-
-    useEffect(() => {
-        if (initialData) {
-            setFormData({
-                code: initialData.code || '',
-                type: initialData.type || 'Point',
-                groupe: initialData.groupe || (groups[0]?.nom || 'Dépôt'),
-                lat: initialData.lat?.toString() || '',
-                lng: initialData.lng?.toString() || '',
-                description: initialData.description || '',
-                rayon: initialData.rayon !== null && initialData.rayon !== undefined ? initialData.rayon.toString() : ''
-            });
-        } else {
-            setFormData({
-                code: '',
-                type: 'Point',
-                groupe: groups[0]?.nom || 'Dépôt',
-                lat: '',
-                lng: '',
-                description: '',
-                rayon: '',
-                nouveauGroupe: ''
-            });
-            setIsAddingGroup(false);
-        }
-    }, [initialData, groups, isOpen]);
+    const [mode, setMode] = useState(() => (buildInitialPolygon(initialData).length > 0 ? 'zone' : 'point'));
+    const [polygonPoints, setPolygonPoints] = useState(() => buildInitialPolygon(initialData));
 
     const handleLocationSelect = (latlng) => {
         setFormData(prev => ({
@@ -160,6 +178,36 @@ const PoiModal = ({ isOpen, onClose, initialData, groups = [], onSubmit }) => {
             lat: latlng.lat.toFixed(6),
             lng: latlng.lng.toFixed(6)
         }));
+    };
+
+    const handlePolygonPointAdd = (latlng) => {
+        setPolygonPoints((prev) => {
+            const nextPoints = [...prev, latlng];
+            const centroid = getPolygonCentroid(nextPoints);
+            setFormData((prevForm) => ({
+                ...prevForm,
+                type: 'Polygone',
+                lat: centroid.lat,
+                lng: centroid.lng,
+            }));
+            return nextPoints;
+        });
+    };
+
+    const handlePolygonPointMove = (index, latlng) => {
+        setPolygonPoints((prev) => {
+            if (index < 0 || index >= prev.length) return prev;
+            const nextPoints = [...prev];
+            nextPoints[index] = latlng;
+            const centroid = getPolygonCentroid(nextPoints);
+            setFormData((prevForm) => ({
+                ...prevForm,
+                type: 'Polygone',
+                lat: centroid.lat,
+                lng: centroid.lng,
+            }));
+            return nextPoints;
+        });
     };
 
     const handleCoordChange = (field, value) => {
@@ -173,9 +221,15 @@ const PoiModal = ({ isOpen, onClose, initialData, groups = [], onSubmit }) => {
         const lat = parseFloat(formData.lat);
         const lng = parseFloat(formData.lng);
         const rayon = formData.rayon === '' ? null : parseFloat(formData.rayon);
+        const polygon = mode === 'zone' ? normalizePolygonPoints(polygonPoints) : [];
 
         if (isNaN(lat) || isNaN(lng)) {
             alert('Veuillez saisir des coordonnées valides.');
+            return;
+        }
+
+        if (mode === 'zone' && polygon.length < 3) {
+            alert('Veuillez dessiner au moins 3 points pour former un polygone.');
             return;
         }
 
@@ -196,24 +250,27 @@ const PoiModal = ({ isOpen, onClose, initialData, groups = [], onSubmit }) => {
                 groupeDescription: isAddingGroup ? formData.nouveauGroupeDescription : '',
                 lat,
                 lng,
-                rayon
+                rayon,
+                polygon,
             });
         }
     };
 
+    if (!isOpen) return null;
+
     return (
         <div className="fixed inset-0 z-[2000] flex items-center justify-center bg-black/50 backdrop-blur-sm">
-            <div className="bg-white w-[900px] h-[600px] rounded-2xl shadow-2xl flex overflow-hidden">
+            <div className="bg-white w-[95vw] max-w-[1100px] h-[92vh] max-h-[760px] rounded-2xl shadow-2xl flex overflow-hidden">
 
                 {/* === LEFT: FORM === */}
-                <div className="w-1/3 p-6 flex flex-col border-r border-gray-100">
+                <div className="w-full md:w-1/3 p-6 flex flex-col border-r border-gray-100 overflow-y-auto">
                     <div className="flex justify-between items-center mb-6">
                         <h2 className="text-xl font-bold text-gray-800">
                             {initialData ? 'Modifier POI' : 'Nouveau POI'}
                         </h2>
                     </div>
 
-                    <form onSubmit={handleSubmit} className="flex-1 space-y-4">
+                    <form onSubmit={handleSubmit} className="flex-1 min-h-0 space-y-4 pb-6">
                         <div>
                             <label className="block text-sm font-medium text-gray-700 mb-1">Code *</label>
                             <input
@@ -231,7 +288,11 @@ const PoiModal = ({ isOpen, onClose, initialData, groups = [], onSubmit }) => {
                                 <label className="block text-sm font-medium text-gray-700 mb-1">Type *</label>
                                 <select
                                     value={formData.type}
-                                    onChange={e => setFormData({ ...formData, type: e.target.value })}
+                                    onChange={e => {
+                                        const nextType = e.target.value;
+                                        setFormData({ ...formData, type: nextType });
+                                        setMode(nextType === 'Polygone' ? 'zone' : 'point');
+                                    }}
                                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 outline-none"
                                 >
                                     <option>Point</option>
@@ -338,7 +399,9 @@ const PoiModal = ({ isOpen, onClose, initialData, groups = [], onSubmit }) => {
                         <div className="mt-auto pt-4">
                             <p className="text-xs text-orange-600 bg-orange-50 p-2 rounded-md mb-4 border border-orange-100 flex items-center gap-2">
                                 <FiMapPin />
-                                {mode === 'point' ? "Cliquez sur la carte ou saisissez les coordonnées." : "Cliquez pour dessiner la zone."}
+                                {mode === 'point'
+                                    ? "Cliquez sur la carte ou saisissez les coordonnées."
+                                    : "Cliquez pour dessiner la zone. Les coordonnées seront calculées automatiquement au centre du polygone."}
                             </p>
 
                             <div className="flex gap-2">
@@ -361,7 +424,7 @@ const PoiModal = ({ isOpen, onClose, initialData, groups = [], onSubmit }) => {
                 </div>
 
                 {/* === RIGHT: MAP === */}
-                <div className="w-2/3 relative h-full">
+                <div className="hidden md:block md:w-2/3 relative h-full">
                     <div className="absolute top-4 right-4 z-[500] bg-white rounded-lg shadow-md p-1 flex items-center gap-1 border border-gray-100">
                         <button
                             onClick={() => setMode('point')}
@@ -372,7 +435,10 @@ const PoiModal = ({ isOpen, onClose, initialData, groups = [], onSubmit }) => {
                         </button>
                         <div className="w-px h-4 bg-gray-200"></div>
                         <button
-                            onClick={() => setMode('zone')}
+                            onClick={() => {
+                                setMode('zone');
+                                setFormData(prev => ({ ...prev, type: 'Polygone' }));
+                            }}
                             className={`p-2 rounded-md transition-all ${mode === 'zone' ? 'bg-orange-100 text-orange-600' : 'text-gray-500 hover:bg-gray-50'}`}
                             title="Mode Zone (Polygone)"
                         >
@@ -406,7 +472,8 @@ const PoiModal = ({ isOpen, onClose, initialData, groups = [], onSubmit }) => {
                                     : null
                             }
                             polygonPoints={polygonPoints}
-                            setPolygonPoints={setPolygonPoints}
+                            onAddPolygonPoint={handlePolygonPointAdd}
+                            onMovePolygonPoint={handlePolygonPointMove}
                         />
                     </MapContainer>
                 </div>

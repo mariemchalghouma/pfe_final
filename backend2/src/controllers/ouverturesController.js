@@ -65,11 +65,7 @@ export const getOuvertures = async ({ date, dateStart, dateEnd, camion }) => {
                     )
                 )
             )::numeric, 2) AS distance_m
-        FROM (
-            SELECT id, code, groupe, description, lat, lng FROM poi
-            UNION ALL
-            SELECT id, code_client AS code, 'Magasin Aziza' AS groupe, nom_client AS description, lat, lng FROM magasin_aziza
-        ) p
+            FROM poi p
         WHERE o.lat IS NOT NULL AND o.lng IS NOT NULL
         ORDER BY distance_m ASC
         LIMIT 1

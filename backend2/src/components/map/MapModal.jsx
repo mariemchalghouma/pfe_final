@@ -104,28 +104,14 @@ const ClusterMarker = ({ cluster, idx, map }) => {
                 }
             }}
         >
-            <Popup>
-                <div className="text-sm min-w-[200px]">
-                    <p className="font-bold text-orange-600 mb-2">{cluster.items.length} points dans cette zone</p>
-                    <div className="space-y-2 max-h-[200px] overflow-y-auto pr-1">
-                        {cluster.items.map((it, i) => (
-                            <div key={it.id || i} className="p-2 border-b border-gray-50 last:border-0 hover:bg-gray-50 rounded transition-colors">
-                                <p className="font-bold text-gray-800 text-xs">{it.label || 'Point'}</p>
-                                {it.info && <p className="text-[10px] text-gray-500">{it.info}</p>}
-                            </div>
-                        ))}
-                    </div>
-                    <p className="mt-2 text-[10px] text-gray-400 italic font-medium">Cliquez pour zoomer</p>
-                </div>
-            </Popup>
         </Marker>
     );
 };
 
 const ClusteredMarkers = ({ validPositions }) => {
-    if (typeof window === 'undefined') return null;
     const { useMap } = require('react-leaflet');
     const map = useMap();
+
     const [zoom, setZoom] = useState(map.getZoom());
 
     useEffect(() => {
@@ -164,6 +150,8 @@ const ClusteredMarkers = ({ validPositions }) => {
         });
         return result;
     }, [validPositions, zoom]);
+
+    if (typeof window === 'undefined') return null;
 
     return (
         <>

@@ -1,8 +1,5 @@
-import pool from '../config/database.js';
-import { calculateDistance } from './arretController.js';
-
-
-
+import pool from "../config/database.js";
+import { calculateDistance } from "./arretController.js";
 
 export const getCamions = async () => {
   try {
@@ -59,18 +56,18 @@ export const getCamions = async () => {
 
     const camions = result.rows.map((row, index) => {
       const vitesse = row.vitesse != null ? Number(row.vitesse) : 0;
-      let statut = 'arrete';
-      if (vitesse > 0) statut = 'en_route';
+      let statut = "arrete";
+      if (vitesse > 0) statut = "en_route";
 
       return {
         id: index + 1,
         plaque: row.camion,
-        chauffeur: row.chauffeur || '—',
-        telephone: row.phone || '—',
+        chauffeur: row.chauffeur || "—",
+        telephone: row.phone || "—",
         localisation:
           row.lat != null && row.lng != null
             ? `${Number(row.lat).toFixed(4)}, ${Number(row.lng).toFixed(4)}`
-            : '—',
+            : "—",
         vitesse,
         statut,
         lat: row.lat != null ? Number(row.lat) : null,
@@ -78,34 +75,39 @@ export const getCamions = async () => {
         kilometrage: row.kilometrage != null ? Number(row.kilometrage) : 0,
         carburant: row.carburant != null ? Number(row.carburant) : null,
         derniereMaj: row.derniere_maj
-          ? new Date(row.derniere_maj).toISOString().replace('T', ' ').slice(0, 16)
-          : '—',
+          ? new Date(row.derniere_maj)
+              .toISOString()
+              .replace("T", " ")
+              .slice(0, 16)
+          : "—",
         ignition: row.ignition,
       };
     });
 
     return Response.json({ success: true, data: camions });
   } catch (error) {
-    console.error('Error getCamions:', error);
+    console.error("Error getCamions:", error);
     return Response.json(
       {
         success: false,
-        message: 'Erreur lors de la récupération des camions',
-        error: process.env.NODE_ENV === 'development' ? error.message : undefined,
+        message: "Erreur lors de la récupération des camions",
+        error:
+          process.env.NODE_ENV === "development" ? error.message : undefined,
       },
-      { status: 500 }
+      { status: 500 },
     );
   }
 };
 
 export const getCamionsTempsReel = async (date) => {
   try {
-    const targetDate = date || new Date().toISOString().split('T')[0];
+    const targetDate = date || new Date().toISOString().split("T")[0];
     const endDateObj = new Date(`${targetDate}T00:00:00Z`);
     endDateObj.setUTCDate(endDateObj.getUTCDate() - 6);
-    const startDate = endDateObj.toISOString().split('T')[0];
+    const startDate = endDateObj.toISOString().split("T")[0];
 
-    const result = await pool.query(`
+    const result = await pool.query(
+      `
       WITH voyage_lines AS (
         SELECT
           UPPER(TRIM(v."PLAMOTI"::text)) AS camion_norm,
@@ -192,13 +194,13 @@ export const getCamionsTempsReel = async (date) => {
         ON REPLACE(s.camion, ' ', '') = REPLACE(v.camion, ' ', '')
        AND g.gps_timestamp BETWEEN s.beginstoptime AND s.endstoptime
       ORDER BY v.voyage_date DESC, v.camion, v.voycle DESC
-    `, [startDate, targetDate]);
+    `,
+      [startDate, targetDate],
+    );
 
     // Récupérer les POI pour le calcul de conformité
     const poiResult = await pool.query(`
       SELECT code, description AS nom, lat, lng FROM poi
-      UNION ALL
-      SELECT code_client AS code, nom_client AS nom, lat, lng FROM magasin_aziza
     `);
     const pois = poiResult.rows;
 
@@ -206,16 +208,17 @@ export const getCamionsTempsReel = async (date) => {
       if (val === null || val === undefined) return null;
       const num = Number(val);
       if (Number.isNaN(num)) return null;
-      const h = String(Math.floor(num / 100)).padStart(2, '0');
-      const m = String(num % 100).padStart(2, '0');
+      const h = String(Math.floor(num / 100)).padStart(2, "0");
+      const m = String(num % 100).padStart(2, "0");
       return `${h}:${m}`;
     };
 
-    const normalize = (val) => (val || '').toString().replace(/\s+/g, '').toUpperCase();
+    const normalize = (val) =>
+      (val || "").toString().replace(/\s+/g, "").toUpperCase();
 
     const data = result.rows.map((row, index) => {
       const speed = row.speed != null ? Number(row.speed) : 0;
-      const status = speed > 0 ? 'en_route' : 'arrete';
+      const status = speed > 0 ? "en_route" : "arrete";
       const gpsLat = row.latitude != null ? parseFloat(row.latitude) : null;
       const gpsLng = row.longitude != null ? parseFloat(row.longitude) : null;
       const hasStopRecord = row.beginstoptime != null;
@@ -224,15 +227,22 @@ export const getCamionsTempsReel = async (date) => {
       let arret = null;
       if (speed === 0 && gpsLat && gpsLng) {
         // Utiliser la position du stop si disponible, sinon la position GPS
-        const refLat = (hasStopRecord && row.stop_lat) ? parseFloat(row.stop_lat) : gpsLat;
-        const refLng = (hasStopRecord && row.stop_lng) ? parseFloat(row.stop_lng) : gpsLng;
+        const refLat =
+          hasStopRecord && row.stop_lat ? parseFloat(row.stop_lat) : gpsLat;
+        const refLng =
+          hasStopRecord && row.stop_lng ? parseFloat(row.stop_lng) : gpsLng;
 
         // Trouver le POI le plus proche
         let minDistance = Infinity;
         let nearestPoi = null;
 
         pois.forEach((poi) => {
-          const dist = calculateDistance(refLat, refLng, parseFloat(poi.lat), parseFloat(poi.lng));
+          const dist = calculateDistance(
+            refLat,
+            refLng,
+            parseFloat(poi.lat),
+            parseFloat(poi.lng),
+          );
           if (dist < minDistance) {
             minDistance = dist;
             nearestPoi = poi;
@@ -242,20 +252,35 @@ export const getCamionsTempsReel = async (date) => {
         // Vérifier si le POI le plus proche correspond à un OTDCODE planifié
         const otdcodes = row.otdcodes || [];
         const poiCode = nearestPoi ? normalize(nearestPoi.code) : null;
-        const isPlanned = poiCode && otdcodes.some(code => normalize(code) === poiCode);
+        const isPlanned =
+          poiCode && otdcodes.some((code) => normalize(code) === poiCode);
 
         // Conforme = distance ≤ 10m ET arrêt planifié
-        const isConforme = (minDistance <= 10) && isPlanned;
+        const isConforme = minDistance <= 10 && isPlanned;
 
         arret = {
-          debut: hasStopRecord ? new Date(row.beginstoptime).toISOString().replace('T', ' ').slice(0, 16) : null,
-          fin: (hasStopRecord && row.endstoptime) ? new Date(row.endstoptime).toISOString().replace('T', ' ').slice(0, 16) : null,
-          duree: (hasStopRecord && row.stopduration)
-            ? `${row.stopduration.hours || 0}h ${row.stopduration.minutes || 0}min`
+          debut: hasStopRecord
+            ? new Date(row.beginstoptime)
+                .toISOString()
+                .replace("T", " ")
+                .slice(0, 16)
             : null,
-          adresse: (hasStopRecord && row.stop_address) ? row.stop_address : null,
-          status: isConforme ? 'conforme' : 'non_conforme',
-          poiProche: nearestPoi ? `${nearestPoi.code} - ${nearestPoi.nom}` : null,
+          fin:
+            hasStopRecord && row.endstoptime
+              ? new Date(row.endstoptime)
+                  .toISOString()
+                  .replace("T", " ")
+                  .slice(0, 16)
+              : null,
+          duree:
+            hasStopRecord && row.stopduration
+              ? `${row.stopduration.hours || 0}h ${row.stopduration.minutes || 0}min`
+              : null,
+          adresse: hasStopRecord && row.stop_address ? row.stop_address : null,
+          status: isConforme ? "conforme" : "non_conforme",
+          poiProche: nearestPoi
+            ? `${nearestPoi.code} - ${nearestPoi.nom}`
+            : null,
           distance: minDistance !== Infinity ? Math.round(minDistance) : null,
         };
       }
@@ -265,12 +290,13 @@ export const getCamionsTempsReel = async (date) => {
         dateTrajet: row.voyage_date,
         datePointGps: row.gps_date || null,
         camion: row.camion,
-        chauffeur: row.chauffeur || '—',
-        telephone: row.telephone || '—',
+        chauffeur: row.chauffeur || "—",
+        telephone: row.telephone || "—",
         voycle: row.voycle || null,
         heureDep: toHour(row.heure_dep),
         heureFin: toHour(row.heure_fin),
-        nbDestinations: row.nb_destinations != null ? Number(row.nb_destinations) : 0,
+        nbDestinations:
+          row.nb_destinations != null ? Number(row.nb_destinations) : 0,
         lat: row.latitude != null ? Number(row.latitude) : null,
         lng: row.longitude != null ? Number(row.longitude) : null,
         vitesse: speed,
@@ -279,8 +305,11 @@ export const getCamionsTempsReel = async (date) => {
         pointsToday: row.points_7j != null ? Number(row.points_7j) : 0,
         points7j: row.points_7j != null ? Number(row.points_7j) : 0,
         derniereMaj: row.gps_timestamp
-          ? new Date(row.gps_timestamp).toISOString().replace('T', ' ').slice(0, 16)
-          : '—',
+          ? new Date(row.gps_timestamp)
+              .toISOString()
+              .replace("T", " ")
+              .slice(0, 16)
+          : "—",
         arret,
       };
     });
@@ -292,14 +321,15 @@ export const getCamionsTempsReel = async (date) => {
       range: { startDate, endDate: targetDate },
     });
   } catch (error) {
-    console.error('Error getCamionsTempsReel:', error);
+    console.error("Error getCamionsTempsReel:", error);
     return Response.json(
       {
         success: false,
-        message: 'Erreur lors de la récupération du temps réel',
-        error: process.env.NODE_ENV === 'development' ? error.message : undefined,
+        message: "Erreur lors de la récupération du temps réel",
+        error:
+          process.env.NODE_ENV === "development" ? error.message : undefined,
       },
-      { status: 500 }
+      { status: 500 },
     );
   }
 };
@@ -307,23 +337,27 @@ export const getCamionsTempsReel = async (date) => {
 /* ═══ Gantt data — one row per VOYAGE (camion + voycle) on a given date ═══ */
 export const getCamionsGantt = async (date) => {
   try {
-    const targetDate = date || new Date().toISOString().split('T')[0];
+    const targetDate = date || new Date().toISOString().split("T")[0];
 
     // 1) All client deliveries for the date — each row = 1 client
-    const voyageResult = await pool.query(`
+    const voyageResult = await pool.query(
+      `
       SELECT "PLAMOTI", "VOYCLE", "SALNOM", "RGILIBL", "SITSIRETEDI",
              "OTDCODE", "PLATOUORDRE", "VOYHRD", "VOYHRF"
       FROM voyage_chauffeur
       WHERE DATE("VOYDTD") = $1 AND "PLAMOTI" IS NOT NULL
       ORDER BY "PLAMOTI", "VOYCLE", "PLATOUORDRE"
-    `, [targetDate]);
+    `,
+      [targetDate],
+    );
 
     if (voyageResult.rows.length === 0) {
       return Response.json({ success: true, data: [], date: targetDate });
     }
 
     // 2) Stops
-    const stopsResult = await pool.query(`
+    const stopsResult = await pool.query(
+      `
       SELECT DISTINCT
         camion, beginstoptime, endstoptime, stopduration,
         latitude, longitude, address,
@@ -331,41 +365,47 @@ export const getCamionsGantt = async (date) => {
       FROM voyage_tracking_stops
       WHERE DATE(beginstoptime) = $1
       ORDER BY camion, beginstoptime ASC
-    `, [targetDate]);
+    `,
+      [targetDate],
+    );
 
     // 3) POI pour le calcul de conformité
     const poiResult = await pool.query(`
       SELECT code, description AS nom, lat, lng FROM poi
-      UNION ALL
-      SELECT code_client AS code, nom_client AS nom, lat, lng FROM magasin_aziza
     `);
     const pois = poiResult.rows;
 
     // 4) Ravitaillements
-    const ravitResult = await pool.query(`
+    const ravitResult = await pool.query(
+      `
       SELECT matricule_camion, COALESCE(date_trans, "date"::timestamp) AS ravit_time,
              latitude, longitude, lieu
       FROM voyagetracking_ravitaillement
       WHERE DATE(COALESCE(date_trans, "date")) = $1
       ORDER BY COALESCE(date_trans, "date"::timestamp)
-    `, [targetDate]);
+    `,
+      [targetDate],
+    );
 
     // 5) Ouvertures de porte
-    const ouverturesResult = await pool.query(`
+    const ouverturesResult = await pool.query(
+      `
       SELECT camion, date_ouverture, date_fermeture, adress, lat, lng, duration,
              temp_ouv, temp_var, temp_fer
       FROM voyagetracking_port_ouvert
       WHERE DATE(date_ouverture) = $1
         AND date_fermeture IS NOT NULL
       ORDER BY date_ouverture ASC
-    `, [targetDate]);
+    `,
+      [targetDate],
+    );
 
     // === Build lookup maps ===
-    const normKey = (raw) => (raw || '').replace(/\s+/g, '').toUpperCase();
+    const normKey = (raw) => (raw || "").replace(/\s+/g, "").toUpperCase();
 
     // Stops map
     const stopsMap = {};
-    stopsResult.rows.forEach(s => {
+    stopsResult.rows.forEach((s) => {
       const key = normKey(s.camion);
       if (!stopsMap[key]) stopsMap[key] = [];
       stopsMap[key].push(s);
@@ -373,7 +413,7 @@ export const getCamionsGantt = async (date) => {
 
     // Ravitaillements map
     const ravitMap = {};
-    ravitResult.rows.forEach(r => {
+    ravitResult.rows.forEach((r) => {
       const key = normKey(r.matricule_camion);
       if (!ravitMap[key]) ravitMap[key] = [];
       ravitMap[key].push({
@@ -386,7 +426,7 @@ export const getCamionsGantt = async (date) => {
 
     // Ouvertures map
     const ouverturesMap = {};
-    ouverturesResult.rows.forEach(o => {
+    ouverturesResult.rows.forEach((o) => {
       const key = normKey(o.camion);
       if (!ouverturesMap[key]) ouverturesMap[key] = [];
       ouverturesMap[key].push({
@@ -404,29 +444,38 @@ export const getCamionsGantt = async (date) => {
 
     // Helper: convert VOYHRD/VOYHRF numeric (e.g. 700 → Date)
     const numToTime = (num) => {
-      const h = String(Math.floor(num / 100)).padStart(2, '0');
-      const m = String(num % 100).padStart(2, '0');
+      const h = String(Math.floor(num / 100)).padStart(2, "0");
+      const m = String(num % 100).padStart(2, "0");
       return new Date(`${targetDate}T${h}:${m}:00`);
     };
 
     const numToTimeStr = (num) => {
       if (!num) return null;
-      const h = String(Math.floor(num / 100)).padStart(2, '0');
-      const m = String(num % 100).padStart(2, '0');
+      const h = String(Math.floor(num / 100)).padStart(2, "0");
+      const m = String(num % 100).padStart(2, "0");
       return `${h}:${m}`;
     };
 
     // Helper: classify a stop via POI + OTDCODE matching (like arretController)
     const classifyStop = (stop, otdcodes) => {
-      const refLat = stop.avg_lat ? parseFloat(stop.avg_lat) : parseFloat(stop.latitude);
-      const refLng = stop.avg_lng ? parseFloat(stop.avg_lng) : parseFloat(stop.longitude);
+      const refLat = stop.avg_lat
+        ? parseFloat(stop.avg_lat)
+        : parseFloat(stop.latitude);
+      const refLng = stop.avg_lng
+        ? parseFloat(stop.avg_lng)
+        : parseFloat(stop.longitude);
 
       // Find nearest POI
       let minDistance = Infinity;
       let nearestPoi = null;
       if (refLat && refLng) {
         pois.forEach((poi) => {
-          const dist = calculateDistance(refLat, refLng, parseFloat(poi.lat), parseFloat(poi.lng));
+          const dist = calculateDistance(
+            refLat,
+            refLng,
+            parseFloat(poi.lat),
+            parseFloat(poi.lng),
+          );
           if (dist < minDistance) {
             minDistance = dist;
             nearestPoi = poi;
@@ -435,15 +484,17 @@ export const getCamionsGantt = async (date) => {
       }
 
       // Check if the nearest POI matches a planned OTDCODE
-      const normalize = (val) => (val || '').toString().replace(/\s+/g, '').toUpperCase();
+      const normalize = (val) =>
+        (val || "").toString().replace(/\s+/g, "").toUpperCase();
       const poiCode = nearestPoi ? normalize(nearestPoi.code) : null;
-      const isPlanned = poiCode && (otdcodes || []).some(code => normalize(code) === poiCode);
+      const isPlanned =
+        poiCode && (otdcodes || []).some((code) => normalize(code) === poiCode);
 
       // Conforme = distance ≤ 10m AND planned
-      const isConforme = (minDistance <= 10) && isPlanned;
+      const isConforme = minDistance <= 10 && isPlanned;
 
       return {
-        type: isConforme ? 'stop_conforme' : 'stop_non_conforme',
+        type: isConforme ? "stop_conforme" : "stop_non_conforme",
         poiName: nearestPoi ? `${nearestPoi.code} - ${nearestPoi.nom}` : null,
         distance: minDistance !== Infinity ? Math.round(minDistance) : null,
         conforme: isConforme,
@@ -452,12 +503,12 @@ export const getCamionsGantt = async (date) => {
 
     // Group voyages by camion + voycle
     const voyageGroups = {};
-    voyageResult.rows.forEach(v => {
+    voyageResult.rows.forEach((v) => {
       const groupKey = `${v.PLAMOTI}__${v.VOYCLE}`;
       if (!voyageGroups[groupKey]) {
         voyageGroups[groupKey] = {
           camion: v.PLAMOTI,
-          chauffeur: v.SALNOM || '—',
+          chauffeur: v.SALNOM || "—",
           voycle: v.VOYCLE,
           heureDep: Number(v.VOYHRD) || null,
           heureFin: Number(v.VOYHRF) || null,
@@ -469,22 +520,30 @@ export const getCamionsGantt = async (date) => {
       // Update dep/fin with min/max across all clients in this voyage
       const hrd = Number(v.VOYHRD);
       const hrf = Number(v.VOYHRF);
-      if (hrd && (!voyageGroups[groupKey].heureDep || hrd < voyageGroups[groupKey].heureDep)) {
+      if (
+        hrd &&
+        (!voyageGroups[groupKey].heureDep ||
+          hrd < voyageGroups[groupKey].heureDep)
+      ) {
         voyageGroups[groupKey].heureDep = hrd;
       }
-      if (hrf && (!voyageGroups[groupKey].heureFin || hrf > voyageGroups[groupKey].heureFin)) {
+      if (
+        hrf &&
+        (!voyageGroups[groupKey].heureFin ||
+          hrf > voyageGroups[groupKey].heureFin)
+      ) {
         voyageGroups[groupKey].heureFin = hrf;
       }
       voyageGroups[groupKey].clients.push({
         ordre: Number(v.PLATOUORDRE) || 0,
-        client: v.SITSIRETEDI || '—',
-        region: v.RGILIBL || '—',
-        code: v.OTDCODE || '—',
+        client: v.SITSIRETEDI || "—",
+        region: v.RGILIBL || "—",
+        code: v.OTDCODE || "—",
       });
     });
 
     // Build Gantt data
-    const ganttData = Object.values(voyageGroups).map(vg => {
+    const ganttData = Object.values(voyageGroups).map((vg) => {
       const camionKey = normKey(vg.camion);
       const stops = stopsMap[camionKey] || [];
       const ravits = ravitMap[camionKey] || [];
@@ -514,10 +573,12 @@ export const getCamionsGantt = async (date) => {
       const events = [];
 
       // — Stops within trip window
-      stops.forEach(stop => {
+      stops.forEach((stop) => {
         const sStart = new Date(stop.beginstoptime);
         const durationMin = Number(stop.stopduration) || 0;
-        const sEnd = new Date(stop.endstoptime || sStart.getTime() + durationMin * 60000);
+        const sEnd = new Date(
+          stop.endstoptime || sStart.getTime() + durationMin * 60000,
+        );
 
         // Only include stops that overlap with the trip window
         if (sEnd <= tripStart || sStart >= tripEnd) return;
@@ -531,9 +592,17 @@ export const getCamionsGantt = async (date) => {
           start: clampedStart,
           end: clampedEnd,
           duration: Math.round((clampedEnd - clampedStart) / 60000),
-          address: stop.address || '—',
-          lat: stop.avg_lat ? Number(stop.avg_lat) : (stop.latitude ? Number(stop.latitude) : null),
-          lng: stop.avg_lng ? Number(stop.avg_lng) : (stop.longitude ? Number(stop.longitude) : null),
+          address: stop.address || "—",
+          lat: stop.avg_lat
+            ? Number(stop.avg_lat)
+            : stop.latitude
+              ? Number(stop.latitude)
+              : null,
+          lng: stop.avg_lng
+            ? Number(stop.avg_lng)
+            : stop.longitude
+              ? Number(stop.longitude)
+              : null,
           poiName: classification.poiName,
           distance: classification.distance,
           conforme: classification.conforme,
@@ -541,34 +610,34 @@ export const getCamionsGantt = async (date) => {
       });
 
       // — Ravitaillements within trip window
-      ravits.forEach(r => {
+      ravits.forEach((r) => {
         if (r.time < tripStart || r.time >= tripEnd) return;
         const rEnd = new Date(r.time.getTime() + 15 * 60000); // 15 min default duration
         events.push({
-          type: 'ravitaillement',
+          type: "ravitaillement",
           start: r.time,
           end: rEnd > tripEnd ? tripEnd : rEnd,
           duration: 15,
-          address: r.lieu || '—',
+          address: r.lieu || "—",
           lat: r.lat,
           lng: r.lng,
-          poiName: r.lieu || 'Station carburant',
+          poiName: r.lieu || "Station carburant",
           distance: null,
           conforme: true,
         });
       });
 
       // — Ouvertures de porte within trip window
-      ouvertures.forEach(o => {
+      ouvertures.forEach((o) => {
         if (o.end <= tripStart || o.start >= tripEnd) return;
         const clampedStart = o.start < tripStart ? tripStart : o.start;
         const clampedEnd = o.end > tripEnd ? tripEnd : o.end;
         events.push({
-          type: 'ouverture_porte',
+          type: "ouverture_porte",
           start: clampedStart,
           end: clampedEnd,
           duration: Math.round((clampedEnd - clampedStart) / 60000),
-          address: o.adresse || '—',
+          address: o.adresse || "—",
           lat: o.lat,
           lng: o.lng,
           poiName: null,
@@ -587,10 +656,10 @@ export const getCamionsGantt = async (date) => {
       const segments = [];
       let cursor = tripStart;
 
-      events.forEach(evt => {
+      events.forEach((evt) => {
         if (evt.start > cursor) {
           segments.push({
-            type: 'driving',
+            type: "driving",
             start: cursor.toISOString(),
             end: evt.start.toISOString(),
             duration: Math.round((evt.start - cursor) / 60000),
@@ -607,7 +676,7 @@ export const getCamionsGantt = async (date) => {
       // Fill remaining time until tripEnd with driving
       if (cursor < tripEnd) {
         segments.push({
-          type: 'driving',
+          type: "driving",
           start: cursor.toISOString(),
           end: tripEnd.toISOString(),
           duration: Math.round((tripEnd - cursor) / 60000),
@@ -616,7 +685,7 @@ export const getCamionsGantt = async (date) => {
 
       const totalMinutes = Math.round((tripEnd - tripStart) / 60000);
       const drivingMinutes = segments
-        .filter(s => s.type === 'driving')
+        .filter((s) => s.type === "driving")
         .reduce((sum, s) => sum + (s.duration || 0), 0);
 
       return {
@@ -626,23 +695,39 @@ export const getCamionsGantt = async (date) => {
         voycle: vg.voycle,
         heureDep: numToTimeStr(vg.heureDep),
         heureFin: numToTimeStr(vg.heureFin),
-        dureeTrajet: `${Math.floor(totalMinutes / 60)}h${totalMinutes % 60 > 0 ? String(totalMinutes % 60).padStart(2, '0') : ''}`,
+        dureeTrajet: `${Math.floor(totalMinutes / 60)}h${totalMinutes % 60 > 0 ? String(totalMinutes % 60).padStart(2, "0") : ""}`,
         clients: vg.clients,
         nbClients: vg.clients.length,
         segments,
         hasData: true,
-        movingPct: totalMinutes > 0 ? Math.round((drivingMinutes / totalMinutes) * 100) : 0,
-        nbStopsConforme: segments.filter(s => s.type === 'stop_conforme').length,
-        nbStopsNonConforme: segments.filter(s => s.type === 'stop_non_conforme').length,
-        nbRavitaillements: segments.filter(s => s.type === 'ravitaillement').length,
-        nbOuverturesPorte: segments.filter(s => s.type === 'ouverture_porte').length,
+        movingPct:
+          totalMinutes > 0
+            ? Math.round((drivingMinutes / totalMinutes) * 100)
+            : 0,
+        nbStopsConforme: segments.filter((s) => s.type === "stop_conforme")
+          .length,
+        nbStopsNonConforme: segments.filter(
+          (s) => s.type === "stop_non_conforme",
+        ).length,
+        nbRavitaillements: segments.filter((s) => s.type === "ravitaillement")
+          .length,
+        nbOuverturesPorte: segments.filter((s) => s.type === "ouverture_porte")
+          .length,
       };
     });
 
     return Response.json({ success: true, data: ganttData, date: targetDate });
   } catch (error) {
-    console.error('Error getCamionsGantt:', error);
-    return Response.json({ success: false, message: 'Erreur Gantt', error: process.env.NODE_ENV === 'development' ? error.message : undefined }, { status: 500 });
+    console.error("Error getCamionsGantt:", error);
+    return Response.json(
+      {
+        success: false,
+        message: "Erreur Gantt",
+        error:
+          process.env.NODE_ENV === "development" ? error.message : undefined,
+      },
+      { status: 500 },
+    );
   }
 };
 
@@ -656,29 +741,33 @@ export const getCamionTrajet = async (camion, date) => {
     `;
 
     if (date) {
-      query += ' AND DATE(gps_timestamp) = $2';
+      query += " AND DATE(gps_timestamp) = $2";
       params.push(date);
     }
 
-    query += ' ORDER BY gps_timestamp ASC';
+    query += " ORDER BY gps_timestamp ASC";
 
     const result = await pool.query(query, params);
 
     const trajet = result.rows
       .filter((item) => item.latitude != null && item.longitude != null)
       .map((item) => [Number(item.latitude), Number(item.longitude)])
-      .filter((pt, i, arr) => i === 0 || pt[0] !== arr[i - 1][0] || pt[1] !== arr[i - 1][1]);
+      .filter(
+        (pt, i, arr) =>
+          i === 0 || pt[0] !== arr[i - 1][0] || pt[1] !== arr[i - 1][1],
+      );
 
     return Response.json({ success: true, data: trajet });
   } catch (error) {
-    console.error('Error getCamionTrajet:', error);
+    console.error("Error getCamionTrajet:", error);
     return Response.json(
       {
         success: false,
-        message: 'Erreur lors de la récupération du trajet',
-        error: process.env.NODE_ENV === 'development' ? error.message : undefined,
+        message: "Erreur lors de la récupération du trajet",
+        error:
+          process.env.NODE_ENV === "development" ? error.message : undefined,
       },
-      { status: 500 }
+      { status: 500 },
     );
   }
 };
