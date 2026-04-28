@@ -2,7 +2,7 @@ import pool from "../config/database.js";
 
 export const getOuvertures = async ({ date, dateStart, dateEnd, camion }) => {
   try {
-    const DISTANCE_MAX_METRES = 5;
+    const RAYON_PAR_DEFAUT_METRES = 10;
     const DUREE_MAX_MINUTES = 60;
     const start = dateStart || date || new Date().toISOString().split("T")[0];
     const end = dateEnd || date || start;
@@ -30,18 +30,26 @@ export const getOuvertures = async ({ date, dateStart, dateEnd, camion }) => {
           planning.voycle AS voycle,
           planning.chauffeur_nom,
           planning.chauffeur_tel,
+          planning.destination_code,
           (planning.voycle IS NOT NULL) AS voyage_planifie,
           nearest.poi_id,
           nearest.poi_code,
           nearest.poi_groupe,
           nearest.poi_description,
-          nearest.distance_m
+          nearest.distance_m,
+          planned.poi_id AS planned_poi_id,
+          planned.poi_code AS planned_poi_code,
+          planned.poi_groupe AS planned_poi_groupe,
+          planned.poi_description AS planned_poi_description,
+          planned.rayon_m AS planned_poi_rayon_m,
+          planned.distance_m AS planned_distance_m
       FROM voyagetracking_port_ouvert o
       LEFT JOIN LATERAL (
         SELECT
             v."VOYCLE" AS voycle,
             v."SALNOM" AS chauffeur_nom,
-            v."SALTEL" AS chauffeur_tel
+            v."SALTEL" AS chauffeur_tel,
+            v."OTDCODE" AS destination_code
         FROM voyage_chauffeur v
         WHERE v."PLAMOTI" IS NOT NULL
           AND UPPER(REPLACE(v."PLAMOTI"::text, ' ', '')) = UPPER(REPLACE(o.camion::text, ' ', ''))
@@ -70,6 +78,30 @@ export const getOuvertures = async ({ date, dateStart, dateEnd, camion }) => {
         ORDER BY distance_m ASC
         LIMIT 1
       ) AS nearest ON TRUE
+      LEFT JOIN LATERAL (
+        SELECT
+            p.id AS poi_id,
+            p.code AS poi_code,
+            p.groupe AS poi_groupe,
+            p.description AS poi_description,
+            COALESCE(NULLIF(p.rayon, 0), ${RAYON_PAR_DEFAUT_METRES})::numeric AS rayon_m,
+            ROUND((
+                6371000 * 2 * ASIN(
+                    SQRT(
+                        POWER(SIN(RADIANS(((o.lat)::double precision - (p.lat)::double precision) / 2)), 2)
+                        + COS(RADIANS((o.lat)::double precision))
+                        * COS(RADIANS((p.lat)::double precision))
+                        * POWER(SIN(RADIANS(((o.lng)::double precision - (p.lng)::double precision) / 2)), 2)
+                    )
+                )
+            )::numeric, 2) AS distance_m
+        FROM poi p
+        WHERE o.lat IS NOT NULL
+          AND o.lng IS NOT NULL
+          AND planning.destination_code IS NOT NULL
+          AND UPPER(REPLACE(p.code::text, ' ', '')) = UPPER(REPLACE(planning.destination_code::text, ' ', ''))
+        LIMIT 1
+      ) AS planned ON TRUE
       WHERE 1=1
     `;
 
@@ -97,13 +129,21 @@ export const getOuvertures = async ({ date, dateStart, dateEnd, camion }) => {
     const ouvertures = result.rows.map((row) => {
       const distancePoiMetres =
         row.distance_m !== null ? Number(row.distance_m) : null;
+      const distancePoiProgrammeMetres =
+        row.planned_distance_m !== null ? Number(row.planned_distance_m) : null;
+      const rayonPoiProgrammeMetres =
+        row.planned_poi_rayon_m !== null
+          ? Number(row.planned_poi_rayon_m)
+          : RAYON_PAR_DEFAUT_METRES;
       const dureeMinutes =
         row.duree_minutes !== null ? Number(row.duree_minutes) : null;
       const voyagePlanifie = Boolean(row.voyage_planifie);
+      const hasPoiProgramme = Boolean(row.planned_poi_id);
       const statut =
         voyagePlanifie &&
-        distancePoiMetres !== null &&
-        distancePoiMetres <= DISTANCE_MAX_METRES &&
+        hasPoiProgramme &&
+        distancePoiProgrammeMetres !== null &&
+        distancePoiProgrammeMetres <= rayonPoiProgrammeMetres &&
         dureeMinutes !== null &&
         dureeMinutes <= DUREE_MAX_MINUTES
           ? "conforme"
@@ -121,7 +161,12 @@ export const getOuvertures = async ({ date, dateStart, dateEnd, camion }) => {
         groupePoiProche: row.poi_groupe || null,
         adressePoiProche: row.poi_description || null,
         distancePoiMetres,
-        seuilConformiteMetres: DISTANCE_MAX_METRES,
+        poiProgramme: row.planned_poi_code || null,
+        groupePoiProgramme: row.planned_poi_groupe || null,
+        adressePoiProgramme: row.planned_poi_description || null,
+        distancePoiProgrammeMetres,
+        seuilConformiteMetres: rayonPoiProgrammeMetres,
+        seuilConformiteParDefautMetres: RAYON_PAR_DEFAUT_METRES,
         dureeMinutes,
         seuilDureeMinutes: DUREE_MAX_MINUTES,
         duree: row.duration || null,
@@ -130,6 +175,7 @@ export const getOuvertures = async ({ date, dateStart, dateEnd, camion }) => {
         voycle: row.voycle || null,
         chauffeurNom: row.chauffeur_nom || null,
         chauffeurTel: row.chauffeur_tel || null,
+        destinationCode: row.destination_code || null,
         voyagePlanifie,
         tempOuv: row.temp_ouv ? Number(row.temp_ouv) : null,
         tempVar: row.temp_var ? Number(row.temp_var) : null,

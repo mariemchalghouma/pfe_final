@@ -1,14 +1,15 @@
 'use client';
 
-import { createContext, useContext } from 'react';
+import { createContext, useContext, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import { canAccessPath, normalizeRoles } from '@/utils/permissions';
 import {
     FiGrid, FiTruck, FiStopCircle, FiUnlock, FiRadio,
-    FiDroplet, FiMapPin,
-    FiLogOut, FiShield, FiChevronLeft
+    FiDroplet, FiMapPin, FiBarChart2, FiAlertTriangle,
+    FiPhone,
+    FiLogOut, FiShield, FiChevronLeft, FiChevronDown
 } from 'react-icons/fi';
 
 // Context for sidebar state
@@ -27,6 +28,7 @@ const Sidebar = () => {
     const pathname = usePathname();
     const router = useRouter();
     const { logout, user } = useAuth();
+    const [openSubMenus, setOpenSubMenus] = useState({ '/carburant/analyse': true });
 
     const roleLabels = {
         admin: 'Administrateur',
@@ -46,32 +48,93 @@ const Sidebar = () => {
         { name: 'Dashboard', path: '/dashboard', icon: FiGrid },
         { name: 'Temps Réel', path: '/temps-reel', icon: FiRadio },
         { name: 'Camions', path: '/camions', icon: FiTruck },
+        { name: 'Appels', path: '/appels', icon: FiPhone },
         { name: 'Suivi Arrêt', path: '/suivi-arret', icon: FiStopCircle },
         { name: 'Ouverture Porte', path: '/ouverture-porte', icon: FiUnlock },
-        { name: 'Carburant', path: '/carburant', icon: FiDroplet },
+        {
+            name: 'Carburant',
+            path: '/carburant/analyse',
+            icon: FiDroplet,
+            subMenu: [
+                { name: 'Analyse', path: '/carburant/analyse', icon: FiBarChart2 },
+                { name: 'Rapport et Alerte', path: '/carburant/rapport-alerte', icon: FiAlertTriangle },
+            ],
+        },
     ];
 
     const secondaryMenu = [
         { name: 'Gestion POI', path: '/gestion-poi', icon: FiMapPin },
-        { name: 'Administration', path: '/administration', icon: FiShield },
+        { name: 'Utilisateur', path: '/administration', icon: FiShield },
     ];
 
     const isActive = (path) => pathname === path || pathname.startsWith(`${path}/`);
+    const toggleSubMenu = (path) => {
+        setOpenSubMenus((prev) => ({ ...prev, [path]: !prev[path] }));
+    };
 
-    const MenuItem = ({ item }) => (
-        <Link
-            href={item.path}
-            className={`flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-200 group
-        ${isActive(item.path)
-                    ? 'bg-orange-500 text-white shadow-[0_8px_24px_rgba(249,115,22,0.35)]'
-                    : 'text-slate-200 hover:bg-white/10 hover:text-white'
-                }`}
-            title={isCollapsed ? item.name : ''}
-        >
-            <item.icon className={`text-lg flex-shrink-0 ${isActive(item.path) ? 'text-white' : 'text-slate-300 group-hover:text-white'}`} />
-            {!isCollapsed && <span className="text-[13px] font-semibold whitespace-nowrap leading-none">{item.name}</span>}
-        </Link>
-    );
+    const MenuItem = ({ item }) => {
+        const childIsActive = item.subMenu?.some((subItem) => isActive(subItem.path));
+        const itemIsActive = isActive(item.path) || childIsActive;
+        const visibleSubItems = item.subMenu?.filter((subItem) => canAccessPath(user, subItem.path)) || [];
+        const isSubMenuOpen = openSubMenus[item.path] ?? false;
+
+        return (
+            <div className="space-y-2">
+                {item.subMenu ? (
+                    <button
+                        type="button"
+                        onClick={() => toggleSubMenu(item.path)}
+                        className={`w-full flex items-center justify-between gap-3 px-3 py-2.5 rounded-xl transition-all duration-200 group
+        ${itemIsActive
+                                ? 'bg-orange-500 text-white shadow-[0_8px_24px_rgba(249,115,22,0.35)]'
+                                : 'text-slate-200 hover:bg-white/10 hover:text-white'
+                            }`}
+                        title={isCollapsed ? item.name : ''}
+                    >
+                        <div className="flex items-center gap-3 min-w-0">
+                            <item.icon className={`text-lg flex-shrink-0 ${itemIsActive ? 'text-white' : 'text-slate-300 group-hover:text-white'}`} />
+                            {!isCollapsed && <span className="text-[13px] font-semibold whitespace-nowrap leading-none">{item.name}</span>}
+                        </div>
+                        {!isCollapsed && (
+                            <FiChevronDown className={`text-base transition-transform ${isSubMenuOpen ? 'rotate-180 text-white' : 'text-slate-200'}`} />
+                        )}
+                    </button>
+                ) : (
+                    <Link
+                        href={item.path}
+                        className={`flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-200 group
+        ${itemIsActive
+                                ? 'bg-orange-500 text-white shadow-[0_8px_24px_rgba(249,115,22,0.35)]'
+                                : 'text-slate-200 hover:bg-white/10 hover:text-white'
+                            }`}
+                        title={isCollapsed ? item.name : ''}
+                    >
+                        <item.icon className={`text-lg flex-shrink-0 ${itemIsActive ? 'text-white' : 'text-slate-300 group-hover:text-white'}`} />
+                        {!isCollapsed && <span className="text-[13px] font-semibold whitespace-nowrap leading-none">{item.name}</span>}
+                    </Link>
+                )}
+
+                {!isCollapsed && item.subMenu && visibleSubItems.length > 0 && isSubMenuOpen && (
+                    <div className="ml-8 space-y-1 border-l border-white/10 pl-3">
+                        {visibleSubItems.map((subItem) => (
+                                <Link
+                                    key={subItem.path}
+                                    href={subItem.path}
+                                    className={`flex items-center gap-2.5 rounded-lg px-3 py-2 text-[12px] font-semibold transition-colors
+                                    ${isActive(subItem.path)
+                                            ? 'bg-white/10 text-orange-300'
+                                            : 'text-slate-300 hover:bg-white/10 hover:text-white'
+                                        }`}
+                                >
+                                    <subItem.icon className="text-sm" />
+                                    <span>{subItem.name}</span>
+                                </Link>
+                            ))}
+                    </div>
+                )}
+            </div>
+        );
+    };
 
     const handleLogout = () => {
         logout();
@@ -80,7 +143,7 @@ const Sidebar = () => {
 
     return (
         <div
-            className={`h-screen bg-gradient-to-b from-[#2c2d31] to-[#242529] border-r border-white/10 flex flex-col fixed left-0 top-0 z-40 transition-all duration-300
+            className={`app-sidebar h-screen bg-gradient-to-b from-[#2c2d31] to-[#242529] border-r border-white/10 flex flex-col fixed left-0 top-0 z-40 transition-all duration-300
         ${isCollapsed ? 'w-[84px]' : 'w-[258px]'}`}
         >
             {/* Header */}
@@ -102,7 +165,7 @@ const Sidebar = () => {
             </div>
 
             {/* Main Menu */}
-            <nav className="flex-1 px-4 py-2 space-y-2 overflow-y-auto">
+            <nav className="flex-1 px-4 py-2 space-y-2 overflow-y-auto no-scrollbar">
                 {mainMenu.filter((item) => canAccessPath(user, item.path)).map((item) => (
                     <MenuItem key={item.path} item={item} />
                 ))}

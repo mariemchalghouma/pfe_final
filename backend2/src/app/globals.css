@@ -19,3 +19,23 @@ body {
   color: var(--foreground);
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
 }
+
+/* Utility to hide scrollbars while keeping scrolling functional */
+.no-scrollbar {
+  -ms-overflow-style: none; /* IE and Edge */
+  scrollbar-width: none; /* Firefox */
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none; /* Chrome, Safari, Opera */
+}
+
+/* Stronger rules targeted to the sidebar to ensure scrollbars are hidden cross-browser */
+.app-sidebar,
+.app-sidebar * {
+  -ms-overflow-style: none !important; /* IE and Edge */
+  scrollbar-width: none !important; /* Firefox */
+}
+.app-sidebar::-webkit-scrollbar,
+.app-sidebar *::-webkit-scrollbar {
+  display: none !important; /* Chrome, Safari, Opera */
+}
