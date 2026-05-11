@@ -7,8 +7,8 @@ import { useAuth } from '@/context/AuthContext';
 import { canAccessPath, normalizeRoles } from '@/utils/permissions';
 import {
     FiGrid, FiTruck, FiStopCircle, FiUnlock, FiRadio,
-    FiDroplet, FiMapPin, FiBarChart2, FiAlertTriangle,
-    FiPhone,
+    FiDroplet, FiMapPin, FiBarChart2,
+    FiPhone, FiAlertTriangle,
     FiLogOut, FiShield, FiChevronLeft, FiChevronDown
 } from 'react-icons/fi';
 
@@ -28,7 +28,7 @@ const Sidebar = () => {
     const pathname = usePathname();
     const router = useRouter();
     const { logout, user } = useAuth();
-    const [openSubMenus, setOpenSubMenus] = useState({ '/carburant/analyse': true });
+    const [openSubMenus, setOpenSubMenus] = useState({ '/carburant': true });
 
     const roleLabels = {
         admin: 'Administrateur',
@@ -46,24 +46,20 @@ const Sidebar = () => {
 
     const mainMenu = [
         { name: 'Dashboard', path: '/dashboard', icon: FiGrid },
-        { name: 'Temps Réel', path: '/temps-reel', icon: FiRadio },
-        { name: 'Camions', path: '/camions', icon: FiTruck },
-        { name: 'Appels', path: '/appels', icon: FiPhone },
+        { name: 'Suivie Camions', path: '/camions', icon: FiTruck },
         { name: 'Suivi Arrêt', path: '/suivi-arret', icon: FiStopCircle },
         { name: 'Ouverture Porte', path: '/ouverture-porte', icon: FiUnlock },
         {
             name: 'Carburant',
-            path: '/carburant/analyse',
+            path: '/carburant',
             icon: FiDroplet,
-            subMenu: [
-                { name: 'Analyse', path: '/carburant/analyse', icon: FiBarChart2 },
-                { name: 'Rapport et Alerte', path: '/carburant/rapport-alerte', icon: FiAlertTriangle },
-            ],
         },
     ];
 
     const secondaryMenu = [
         { name: 'Gestion POI', path: '/gestion-poi', icon: FiMapPin },
+        { name: 'Appels', path: '/appels', icon: FiPhone },
+        { name: 'Réclamations', path: '/reclamations', icon: FiAlertTriangle },
         { name: 'Utilisateur', path: '/administration', icon: FiShield },
     ];
 

@@ -11,6 +11,7 @@ export const ROLE_TO_PATHS = {
     "/parametres",
     "/notifications",
     "/appels",
+    "/reclamations",
   ],
   poi: ["/gestion-poi", "/camions", "/temps-reel", "/notifications"],
   arrets: ["/suivi-arret", "/camions", "/temps-reel", "/notifications"],

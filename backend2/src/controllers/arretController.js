@@ -1,5 +1,8 @@
 import pool from "../config/database.js";
 
+const stopsResponseCache = new Map();
+const STOPS_CACHE_TTL_MS = 60_000;
+
 /**
  * Calcule la distance entre deux points GPS en mètres (Formule Haversine)
  */
@@ -56,33 +59,111 @@ export const getStops = async ({
   dateStart,
   dateEnd,
   rayon = 10,
+  limit = 500,
+  offset = 0,
 } = {}) => {
   try {
     const start = dateStart || date || new Date().toISOString().split("T")[0];
     const end = dateEnd || date || start;
+    const dayRange = Math.floor(
+      (new Date(end) - new Date(start)) / (1000 * 60 * 60 * 24),
+    );
+    const cacheTTL =
+      dayRange > 7 ? 5 * 60_000 : dayRange > 1 ? 3 * 60_000 : 60_000;
+    const cacheKey = `${start}|${end}|${rayon}|${limit}|${offset}`;
+    const cachedEntry = stopsResponseCache.get(cacheKey);
+    if (cachedEntry && cachedEntry.expiresAt > Date.now()) {
+      return Response.json(cachedEntry.payload);
+    }
+
     const normalize = (val) =>
       (val || "").toString().replace(/\s+/g, "").toUpperCase();
 
-    const poiResult = await pool.query(`
-      SELECT code, description as nom, lat, lng, rayon FROM poi
-    `);
-    const pois = poiResult.rows;
+    const query = `
+      WITH dedup_stops AS (
+        SELECT DISTINCT ON (
+            s.address,
+            s.beginstoptime,
+            s.endstoptime,
+            s.stopduration,
+            s.camion,
+            s.latitude,
+            s.longitude,
+            s.systemgps,
+            s.created_date
+        )
+            s.ctid::text AS ctid,
+            s.camion,
+            s.beginstoptime,
+            s.endstoptime,
+            s.stopduration,
+            s.latitude AS lat,
+            s.longitude AS lng,
+            s.address,
+            s.systemgps,
+            s.created_date
+        FROM voyage_tracking_stops s
+        WHERE s.beginstoptime >= $1::date
+          AND s.beginstoptime < ($2::date + INTERVAL '1 day')
+        ORDER BY
+            s.address,
+            s.beginstoptime,
+            s.endstoptime,
+            s.stopduration,
+            s.camion,
+            s.latitude,
+            s.longitude,
+            s.systemgps,
+            s.created_date,
+            s.ctid
+      ),
+      page_stops AS (
+        SELECT *
+        FROM dedup_stops
+        ORDER BY beginstoptime DESC, ctid
+        LIMIT $3 OFFSET $4
+      )
+      SELECT
+          p.ctid,
+          p.camion,
+          p.beginstoptime,
+          p.endstoptime,
+          p.stopduration,
+          p.lat,
+          p.lng,
+          p.address,
+          p.systemgps,
+          gps.avg_lat,
+          gps.avg_lng
+      FROM page_stops p
+      LEFT JOIN LATERAL (
+          SELECT
+              AVG(g.latitude) AS avg_lat,
+              AVG(g.longitude) AS avg_lng
+          FROM local_histo_gps_all g
+          WHERE REPLACE(UPPER(TRIM(g.camion)), ' ', '') = REPLACE(UPPER(TRIM(p.camion)), ' ', '')
+            AND g.gps_timestamp BETWEEN p.beginstoptime AND p.endstoptime
+      ) gps ON TRUE
+      ORDER BY p.beginstoptime DESC, p.ctid
+    `;
 
-    // Récupérer les données de planification voyage_chauffeur pour la période
-    const voyageResult = await pool.query(
-      `
-     
-      SELECT "PLAMOTI", "VOYDTD", "VOYCLE", "SALNOM", "SALTEL", "RGILIBL", "SITSIRETEDI","OTDCODE"
- 
-      FROM voyage_chauffeur
-      WHERE "VOYDTD" >= $1::date
-        AND "VOYDTD" < ($2::date + INTERVAL '1 day')
-    `,
-      [start, end],
-    );
-    const voyages = voyageResult.rows;
+    const [poiResult, voyageResult, result] = await Promise.all([
+      pool.query(`
+        SELECT code, description as nom, lat, lng, rayon FROM poi
+      `),
+      pool.query(
+        `
+        SELECT "PLAMOTI", "VOYDTD", "VOYCLE", "SALNOM", "SALTEL", "RGILIBL", "SITSIRETEDI", "OTDCODE"
+        FROM voyage_chauffeur
+        WHERE "VOYDTD" >= $1::date
+          AND "VOYDTD" < ($2::date + INTERVAL '1 day')
+      `,
+        [start, end],
+      ),
+      pool.query(query, [start, end, limit, offset]),
+    ]);
 
-    const parsedPois = pois
+    const parsedPois = poiResult.rows
       .map((poi) => ({
         ...poi,
         latNum: Number(poi.lat),
@@ -97,44 +178,15 @@ export const getStops = async ({
     );
 
     const voyagesByCamionDate = new Map();
-    voyages.forEach((voyage) => {
+    voyageResult.rows.forEach((voyage) => {
       const key = `${normalize(voyage.PLAMOTI)}|${toLocalDateKey(voyage.VOYDTD)}`;
       if (!voyagesByCamionDate.has(key)) voyagesByCamionDate.set(key, []);
       voyagesByCamionDate.get(key).push(voyage);
     });
 
-    const query = `
-      SELECT
-          s.camion,
-          s.beginstoptime,
-          s.endstoptime,
-          s.stopduration,
-          s.latitude AS lat,
-          s.longitude AS lng,
-          s.address,
-          s.systemgps,
-          gps.avg_lat,
-          gps.avg_lng
-      FROM voyage_tracking_stops s
-      LEFT JOIN LATERAL (
-          SELECT
-              AVG(g.latitude) AS avg_lat,
-              AVG(g.longitude) AS avg_lng
-          FROM local_histo_gps_all g
-          WHERE REPLACE(UPPER(TRIM(g.camion)), ' ', '') = REPLACE(UPPER(TRIM(s.camion)), ' ', '')
-            AND g.gps_timestamp BETWEEN s.beginstoptime AND s.endstoptime
-      ) gps ON TRUE
-      WHERE s.beginstoptime >= $1::date
-        AND s.beginstoptime < ($2::date + INTERVAL '1 day')
-        AND s.endstoptime IS NOT NULL
-        AND s.endstoptime >= $1::date
-        AND s.endstoptime < ($2::date + INTERVAL '1 day')
-      ORDER BY s.beginstoptime DESC
-    `;
-
-    const result = await pool.query(query, [start, end]);
-
-    const arrets = result.rows.map((row, index) => {
+    const arrets = result.rows.map((row) => {
+      // Utiliser ctid (row ID interne PostgreSQL) pour une vraie clé unique
+      const stableId = row.ctid;
       const avgLat = row.avg_lat != null ? Number(row.avg_lat) : NaN;
       const avgLng = row.avg_lng != null ? Number(row.avg_lng) : NaN;
       const rowLat = row.lat != null ? Number(row.lat) : NaN;
@@ -250,7 +302,7 @@ export const getStops = async ({
       }
 
       return {
-        id: index + 1,
+        id: stableId,
         camion: row.camion || "Inconnu",
         date: formatLocalDateTime(row.beginstoptime),
         duree: row.stopduration
@@ -279,7 +331,17 @@ export const getStops = async ({
       };
     });
 
-    return Response.json({ success: true, data: arrets, meta: { rayon } });
+    const payload = {
+      success: true,
+      data: arrets,
+      meta: { rayon, limit, offset, hasMore: arrets.length === limit },
+    };
+    stopsResponseCache.set(cacheKey, {
+      payload,
+      expiresAt: Date.now() + cacheTTL,
+    });
+
+    return Response.json(payload);
   } catch (error) {
     console.error("Error getStops:", error);
     return Response.json(

@@ -31,6 +31,19 @@ const formatDureeMinutes = (minutes) => {
   return `${Math.round(totalMinutes)} min`;
 };
 
+const getToday = () => new Date().toISOString().split("T")[0];
+
+const getInitialFilters = (today) => ({
+  dateFilterMode: "day",
+  filterDate: today,
+  filterStartDate: "",
+  filterEndDate: "",
+  filterWeek: "",
+  filterMonth: "",
+  filterMatricule: "",
+  statusFilter: "all",
+});
+
 const EmptyDoorIcon = () => (
   <svg
     width="44"
@@ -63,78 +76,102 @@ const EmptyDoorIcon = () => (
   </svg>
 );
 
+const StatCard = ({ title, value, icon: Icon, iconWrap, valueColor }) => (
+  <div className="rounded-2xl border border-gray-100 bg-white p-6 shadow-sm">
+    <div className="flex items-center gap-4">
+      <div
+        className={`flex h-12 w-12 items-center justify-center rounded-2xl ${iconWrap}`}
+      >
+        <Icon className="text-xl" />
+      </div>
+      <div>
+        <p className="text-[11px] font-bold uppercase tracking-wider text-gray-400">
+          {title}
+        </p>
+        <p className={`text-2xl font-black leading-none ${valueColor}`}>
+          {value}
+        </p>
+      </div>
+    </div>
+  </div>
+);
+
 const OuverturePorte = () => {
+  const today = useMemo(() => getToday(), []);
+  const initialFilters = useMemo(() => getInitialFilters(today), [today]);
+
   const [ouverturesData, setOuverturesData] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [dateFilterMode, setDateFilterMode] = useState("day");
-  const [filterDate, setFilterDate] = useState("");
-  const [filterStartDate, setFilterStartDate] = useState("");
-  const [filterEndDate, setFilterEndDate] = useState("");
-  const [filterWeek, setFilterWeek] = useState("");
-  const [filterMonth, setFilterMonth] = useState("");
-  const [filterMatricule, setFilterMatricule] = useState("");
-  const [statusFilter, setStatusFilter] = useState("all");
+  const [draftFilters, setDraftFilters] = useState(initialFilters);
+  const [appliedFilters, setAppliedFilters] = useState(initialFilters);
   const [selectedOuvertureId, setSelectedOuvertureId] = useState(null);
   const [isMapOpen, setIsMapOpen] = useState(false);
   const [mapPositions, setMapPositions] = useState([]);
 
-  const getDateRangeParams = useCallback(() => {
-    const today = new Date().toISOString().split("T")[0];
+  const updateDraftFilter = (key, value) => {
+    setDraftFilters((prev) => ({ ...prev, [key]: value }));
+  };
 
-    if (dateFilterMode === "day") {
-      const day = filterDate || today;
-      return { dateStart: day, dateEnd: day };
-    }
+  const getDateRangeParams = useCallback(
+    (filters) => {
+      const {
+        dateFilterMode,
+        filterDate,
+        filterStartDate,
+        filterEndDate,
+        filterWeek,
+        filterMonth,
+      } = filters;
 
-    if (dateFilterMode === "range") {
-      return {
-        dateStart: filterStartDate || today,
-        dateEnd: filterEndDate || filterStartDate || today,
-      };
-    }
+      if (dateFilterMode === "day") {
+        const day = filterDate || today;
+        return { dateStart: day, dateEnd: day };
+      }
 
-    if (dateFilterMode === "week" && filterWeek) {
-      const [year, week] = filterWeek.split("-W").map(Number);
-      const firstDayOfYear = new Date(Date.UTC(year, 0, 1));
-      const firstWeekDayOffset = (firstDayOfYear.getUTCDay() || 7) - 1;
-      const weekStart = new Date(firstDayOfYear);
-      weekStart.setUTCDate(
-        firstDayOfYear.getUTCDate() - firstWeekDayOffset + (week - 1) * 7,
-      );
-      const weekEnd = new Date(weekStart);
-      weekEnd.setUTCDate(weekStart.getUTCDate() + 6);
+      if (dateFilterMode === "range") {
+        return {
+          dateStart: filterStartDate || today,
+          dateEnd: filterEndDate || filterStartDate || today,
+        };
+      }
 
-      return {
-        dateStart: weekStart.toISOString().split("T")[0],
-        dateEnd: weekEnd.toISOString().split("T")[0],
-      };
-    }
+      if (dateFilterMode === "week" && filterWeek) {
+        const [year, week] = filterWeek.split("-W").map(Number);
+        const firstDayOfYear = new Date(Date.UTC(year, 0, 1));
+        const firstWeekDayOffset = (firstDayOfYear.getUTCDay() || 7) - 1;
+        const weekStart = new Date(firstDayOfYear);
+        weekStart.setUTCDate(
+          firstDayOfYear.getUTCDate() - firstWeekDayOffset + (week - 1) * 7,
+        );
+        const weekEnd = new Date(weekStart);
+        weekEnd.setUTCDate(weekStart.getUTCDate() + 6);
 
-    if (dateFilterMode === "month" && filterMonth) {
-      const [y, m] = filterMonth.split("-").map(Number);
-      const monthStart = new Date(Date.UTC(y, m - 1, 1));
-      const monthEnd = new Date(Date.UTC(y, m, 0));
-      return {
-        dateStart: monthStart.toISOString().split("T")[0],
-        dateEnd: monthEnd.toISOString().split("T")[0],
-      };
-    }
+        return {
+          dateStart: weekStart.toISOString().split("T")[0],
+          dateEnd: weekEnd.toISOString().split("T")[0],
+        };
+      }
 
-    return { dateStart: today, dateEnd: today };
-  }, [
-    dateFilterMode,
-    filterDate,
-    filterStartDate,
-    filterEndDate,
-    filterWeek,
-    filterMonth,
-  ]);
+      if (dateFilterMode === "month" && filterMonth) {
+        const [y, m] = filterMonth.split("-").map(Number);
+        const monthStart = new Date(Date.UTC(y, m - 1, 1));
+        const monthEnd = new Date(Date.UTC(y, m, 0));
+        return {
+          dateStart: monthStart.toISOString().split("T")[0],
+          dateEnd: monthEnd.toISOString().split("T")[0],
+        };
+      }
+
+      return { dateStart: today, dateEnd: today };
+    },
+    [today],
+  );
 
   useEffect(() => {
     const fetchOuvertures = async () => {
       try {
         setLoading(true);
-        const { dateStart, dateEnd } = getDateRangeParams();
+        const { dateStart, dateEnd } = getDateRangeParams(appliedFilters);
         const response = await ouverturesAPI.getOuvertures({
           dateStart,
           dateEnd,
@@ -207,7 +244,7 @@ const OuverturePorte = () => {
     };
 
     fetchOuvertures();
-  }, [getDateRangeParams]);
+  }, [appliedFilters, getDateRangeParams]);
 
   const filteredData = useMemo(() => {
     const getWeekNumber = (dateValue) => {
@@ -224,6 +261,17 @@ const OuverturePorte = () => {
     };
 
     return ouverturesData.filter((o) => {
+      const {
+        statusFilter,
+        dateFilterMode,
+        filterDate,
+        filterStartDate,
+        filterEndDate,
+        filterWeek,
+        filterMonth,
+        filterMatricule,
+      } = appliedFilters;
+
       const matchStatus =
         statusFilter === "all" ? true : o.statut === statusFilter;
       const dateSource =
@@ -258,17 +306,7 @@ const OuverturePorte = () => {
 
       return matchStatus && matchDate && matchMatricule;
     });
-  }, [
-    ouverturesData,
-    statusFilter,
-    dateFilterMode,
-    filterDate,
-    filterStartDate,
-    filterEndDate,
-    filterWeek,
-    filterMonth,
-    filterMatricule,
-  ]);
+  }, [ouverturesData, appliedFilters]);
 
   const stats = useMemo(
     () => ({
@@ -327,391 +365,447 @@ const OuverturePorte = () => {
     setIsMapOpen(true);
   };
 
+  const applyFilters = () => {
+    setAppliedFilters(draftFilters);
+  };
+
+  const resetFilters = () => {
+    setDraftFilters(initialFilters);
+    setAppliedFilters(initialFilters);
+  };
+
+  const cardData = [
+    {
+      title: "TOTAL",
+      value: String(stats.total),
+      icon: FiTarget,
+      iconWrap: "bg-slate-100 text-slate-500",
+      valueColor: "text-slate-900",
+    },
+    {
+      title: "CONFORMES",
+      value: String(stats.conformes),
+      icon: FiCheckCircle,
+      iconWrap: "bg-orange-50 text-orange-500",
+      valueColor: "text-orange-600",
+    },
+    {
+      title: "NON CONFORMES",
+      value: String(stats.nonConformes),
+      icon: FiXCircle,
+      iconWrap: "bg-red-50 text-red-500",
+      valueColor: "text-red-500",
+    },
+  ];
+
   return (
     <>
-      <div className="p-6">
-        <div className="mb-8 p-1">
-          <div className="flex flex-wrap items-center gap-4">
-            <div className="flex bg-gray-100 p-1 rounded-xl">
-              {[
-                { id: "day", label: "Jour" },
-                { id: "range", label: "Plage" },
-                { id: "week", label: "Semaine" },
-                { id: "month", label: "Mois" },
-              ].map((mode) => (
+      <section className="min-h-full bg-[#f3f4f6] p-6 text-sm text-gray-700">
+        <div className="mx-auto max-w-[1500px] space-y-6">
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            {cardData.map((card) => (
+              <StatCard key={card.title} {...card} />
+            ))}
+          </div>
+
+          <div className="rounded-2xl border border-gray-100 bg-white p-6 shadow-sm">
+            <div className="mb-6 flex items-center justify-between gap-3">
+              <h2 className="text-base font-black uppercase tracking-wide text-gray-900">
+                Filtres
+              </h2>
+              <div className="flex items-center gap-2">
                 <button
-                  key={mode.id}
-                  onClick={() => setDateFilterMode(mode.id)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${dateFilterMode === mode.id ? "bg-white text-orange-600 shadow-sm" : "text-gray-500 hover:text-gray-700"}`}
+                  onClick={handleOpenFullMap}
+                  className="rounded-lg border border-gray-200 bg-gray-50 px-2.5 py-2 text-gray-500 transition hover:bg-orange-50 hover:text-orange-600"
+                  title="Voir sur la carte"
                 >
-                  {mode.label}
+                  <FiMap className="text-sm" />
                 </button>
-              ))}
-            </div>
-
-            <div className="flex items-center gap-2">
-              {dateFilterMode === "day" && (
-                <input
-                  type="date"
-                  value={filterDate}
-                  onChange={(e) => setFilterDate(e.target.value)}
-                  className="px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-orange-500 transition-all font-medium"
-                />
-              )}
-              {dateFilterMode === "range" && (
-                <div className="flex items-center gap-2">
-                  <input
-                    type="date"
-                    value={filterStartDate}
-                    onChange={(e) => setFilterStartDate(e.target.value)}
-                    className="px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-orange-500 transition-all font-medium"
-                  />
-                  <span className="text-gray-400 font-bold">au</span>
-                  <input
-                    type="date"
-                    value={filterEndDate}
-                    onChange={(e) => setFilterEndDate(e.target.value)}
-                    className="px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-orange-500 transition-all font-medium"
-                  />
-                </div>
-              )}
-              {dateFilterMode === "week" && (
-                <input
-                  type="week"
-                  value={filterWeek}
-                  onChange={(e) => setFilterWeek(e.target.value)}
-                  className="px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-orange-500 transition-all font-medium"
-                />
-              )}
-              {dateFilterMode === "month" && (
-                <input
-                  type="month"
-                  value={filterMonth}
-                  onChange={(e) => setFilterMonth(e.target.value)}
-                  className="px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-orange-500 transition-all font-medium"
-                />
-              )}
-            </div>
-
-            <div className="relative">
-              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <FiFilter className="text-gray-400" />
-              </div>
-              <input
-                type="text"
-                placeholder="Matricule..."
-                value={filterMatricule}
-                onChange={(e) => setFilterMatricule(e.target.value)}
-                className="pl-10 pr-3 py-2.5 border border-gray-200 rounded-xl text-sm w-44 focus:outline-none focus:ring-2 focus:ring-orange-500 transition-all"
-              />
-            </div>
-
-            <div className="relative">
-              <select
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
-                className="pl-3 pr-10 py-2.5 border border-gray-200 rounded-xl text-sm bg-gray-50 appearance-none focus:outline-none focus:ring-2 focus:ring-orange-500 border-none cursor-pointer font-medium"
-              >
-                <option value="all">Tous</option>
-                <option value="conforme">Conforme</option>
-                <option value="non_conforme">Non conforme</option>
-              </select>
-              <FiFilter className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-            </div>
-
-            <button
-              onClick={handleOpenFullMap}
-              className="p-2.5 bg-gray-50 text-gray-400 hover:text-orange-600 hover:bg-orange-50 rounded-xl transition-all border border-gray-100"
-              title="Voir sur la carte"
-            >
-              <FiMap className="text-lg" />
-            </button>
-          </div>
-
-          <div className="mt-4 pt-4 border-t border-gray-200/70">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-0 items-center">
-              <div className="flex items-center gap-3 md:pr-5">
-                <div className="w-10 h-10 rounded-xl bg-slate-100 text-slate-500 flex items-center justify-center">
-                  <FiTarget className="text-lg" />
-                </div>
-                <div>
-                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.14em] leading-tight">
-                    Total
-                  </p>
-                  <p className="text-[32px] leading-none font-black text-slate-900">
-                    {stats.total}
-                  </p>
-                </div>
-              </div>
-              <div className="flex items-center gap-3 md:px-5 md:border-l md:border-r md:border-gray-200">
-                <div className="w-10 h-10 rounded-xl bg-orange-50 text-orange-500 flex items-center justify-center">
-                  <FiCheckCircle className="text-lg" />
-                </div>
-                <div>
-                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.14em] leading-tight">
-                    Conformes
-                  </p>
-                  <p className="text-[32px] leading-none font-black text-orange-600">
-                    {stats.conformes}
-                  </p>
-                </div>
-              </div>
-              <div className="flex items-center gap-3 md:pl-5">
-                <div className="w-10 h-10 rounded-xl bg-red-50 text-red-500 flex items-center justify-center">
-                  <FiXCircle className="text-lg" />
-                </div>
-                <div>
-                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.14em] leading-tight">
-                    Non conformes
-                  </p>
-                  <p className="text-[32px] leading-none font-black text-red-500">
-                    {stats.nonConformes}
-                  </p>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {filteredData.length > 0 && (
-          <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm mb-8">
-            <h3 className="text-[11px] font-bold text-gray-400 uppercase tracking-[0.1em] mb-6">
-              OUVERTURES PAR DATE — CONFORME VS NON CONFORME
-            </h3>
-            <div className="h-[110px] w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart
-                  data={chartData}
-                  margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
+                <button
+                  onClick={resetFilters}
+                  className="rounded-xl border border-gray-200 px-3 py-2 text-xs font-bold text-gray-600 hover:bg-gray-50"
                 >
-                  <CartesianGrid
-                    strokeDasharray="3 3"
-                    vertical={false}
-                    stroke="#f1f5f9"
-                  />
-                  <XAxis
-                    dataKey="date"
-                    tick={{ fill: "#94a3b8", fontSize: 11, fontWeight: 600 }}
-                    axisLine={false}
-                    tickLine={false}
-                  />
-                  <YAxis
-                    tick={{ fill: "#cbd5e1", fontSize: 10, fontWeight: 500 }}
-                    axisLine={false}
-                    tickLine={false}
-                    width={32}
-                  />
-                  <Tooltip
-                    cursor={{ fill: "rgba(241,245,249,0.35)" }}
-                    contentStyle={{
-                      borderRadius: "10px",
-                      border: "1px solid #e2e8f0",
-                      fontSize: 12,
-                    }}
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="conforme"
-                    name="Conforme"
-                    stroke="#46B519"
-                    strokeWidth={2}
-                    dot={{
-                      r: 4,
-                      fill: "#46B519",
-                      strokeWidth: 2,
-                      stroke: "#fff",
-                    }}
-                    activeDot={{ r: 6 }}
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="non_conforme"
-                    name="Non conforme"
-                    stroke="#FF4B50"
-                    strokeWidth={2}
-                    dot={{
-                      r: 4,
-                      fill: "#FF4B50",
-                      strokeWidth: 2,
-                      stroke: "#fff",
-                    }}
-                    activeDot={{ r: 6 }}
-                  />
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
-            <div className="mt-4 flex items-center justify-center gap-8 text-sm font-semibold text-gray-500">
-              <span className="inline-flex items-center gap-2">
-                <span className="w-4 h-4 rounded-full bg-[#46B519]" /> CONFORME
-              </span>
-              <span className="inline-flex items-center gap-2">
-                <span className="w-4 h-4 rounded-full bg-[#FF4B50]" /> NON
-                CONFORME
-              </span>
-            </div>
-          </div>
-        )}
-
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden min-h-[500px]">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm text-left border-collapse">
-              <thead>
-                <tr className="bg-gray-50/50 border-b border-gray-100">
-                  <th className="px-6 py-2.5 font-bold text-gray-500 uppercase tracking-wider text-[11px]">
-                    Camion
-                  </th>
-                  <th className="px-6 py-2.5 font-bold text-gray-500 uppercase tracking-wider text-[11px]">
-                    Voyage planifié
-                  </th>
-                  <th className="px-6 py-2.5 font-bold text-gray-500 uppercase tracking-wider text-[11px]">
-                    Localisation
-                  </th>
-                  <th className="px-6 py-2.5 font-bold text-gray-500 uppercase tracking-wider text-[11px]">
-                    POI proche
-                  </th>
-                  <th className="px-6 py-2.5 font-bold text-gray-500 uppercase tracking-wider text-[11px]">
-                    Adresse POI
-                  </th>
-                  <th className="px-6 py-2.5 font-bold text-gray-500 uppercase tracking-wider text-[11px]">
-                    Distance
-                  </th>
-                  <th className="px-6 py-2.5 font-bold text-gray-500 uppercase tracking-wider text-[11px]">
-                    Ouverture
-                  </th>
-                  <th className="px-6 py-2.5 font-bold text-gray-500 uppercase tracking-wider text-[11px]">
-                    Date ouv.
-                  </th>
-                  <th className="px-6 py-2.5 font-bold text-gray-500 uppercase tracking-wider text-[11px]">
-                    Durée
-                  </th>
-                  <th className="px-6 py-2.5 font-bold text-gray-500 uppercase tracking-wider text-[11px]">
-                    Date ferm.
-                  </th>
-                  <th className="px-6 py-2.5 font-bold text-gray-500 uppercase tracking-wider text-[11px]">
-                    Statut
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-50">
-                {filteredData.map((row) => (
-                  <tr
-                    key={row.id}
-                    onClick={() => handleSelectOuverture(row)}
-                    className={`group cursor-pointer transition-all ${selectedOuvertureId === row.id ? "ring-2 ring-inset ring-orange-200" : ""}`}
-                    style={{
-                      backgroundColor:
-                        row.statut === "conforme" ? "#f0fdf4" : "#fef2f2",
-                    }}
-                  >
-                    <td className="px-6 py-2 whitespace-nowrap">
-                      <span className="font-semibold text-gray-900 text-sm">
-                        {row.camion}
-                      </span>
-                    </td>
-                    <td className="px-6 py-2 whitespace-nowrap">
-                      {row.voyagePlanifie ? (
-                        <span className="px-3 py-1 rounded-full text-xs font-bold bg-green-50 text-green-700 border border-green-200">
-                          Oui
-                        </span>
-                      ) : (
-                        <span className="px-3 py-1 rounded-full text-xs font-bold bg-red-50 text-red-700 border border-red-200">
-                          Non
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-6 py-2 whitespace-nowrap">
-                      <span className="inline-flex items-center gap-1.5 font-medium text-gray-600">
-                        <FiMapPin className="text-gray-400" />
-                        {row.localisation}
-                      </span>
-                    </td>
-                    <td className="px-6 py-2 whitespace-nowrap font-medium text-gray-600">
-                      {row.poiProche}
-                    </td>
-                    <td className="px-6 py-2 whitespace-nowrap font-medium text-gray-600">
-                      {row.poiAdresse}
-                    </td>
-                    <td className="px-6 py-2 whitespace-nowrap">
-                      <span className="px-3 py-1 bg-gray-100 rounded-full text-xs font-bold text-gray-700">
-                        {row.distancePoiMetres !== null &&
-                        row.distancePoiMetres !== undefined
-                          ? `${Number(row.distancePoiMetres).toFixed(2)} m`
-                          : "-"}
-                      </span>
-                    </td>
-                    <td className="px-6 py-2 whitespace-nowrap">
-                      <span className="px-3 py-1 bg-orange-50 border border-orange-200 rounded-full text-xs font-bold text-orange-700">
-                        {row.ouverture}
-                      </span>
-                    </td>
-                    <td className="px-6 py-2 whitespace-nowrap font-medium text-gray-600">
-                      <div className="font-semibold text-gray-900 text-sm">
-                        {row.dateOuv}
-                      </div>
-                      <div className="text-[11px] text-gray-400">
-                        {row.dateOuvJour}
-                      </div>
-                    </td>
-                    <td className="px-6 py-2 whitespace-nowrap">
-                      <span className="px-3 py-1 bg-gray-100 rounded-full text-xs font-bold text-gray-700">
-                        {row.duree}
-                      </span>
-                    </td>
-                    <td className="px-6 py-2 whitespace-nowrap font-medium text-gray-600">
-                      <div className="font-semibold text-gray-900 text-sm">
-                        {row.dateFerm}
-                      </div>
-                      {row.dateFermJour && (
-                        <div className="text-[11px] text-gray-400">
-                          {row.dateFermJour}
-                        </div>
-                      )}
-                    </td>
-                    <td className="px-6 py-2">
-                      {row.statut === "conforme" ? (
-                        <div className="flex items-center gap-2">
-                          <div className="w-2 h-2 rounded-full bg-green-500"></div>
-                          <span className="text-[10px] font-semibold uppercase tracking-tighter text-green-700 inline-flex items-center gap-1">
-                            <FiCheckCircle /> Conforme
-                          </span>
-                        </div>
-                      ) : (
-                        <div className="flex items-center gap-2">
-                          <div className="w-2 h-2 rounded-full bg-red-500"></div>
-                          <span className="text-[10px] font-semibold uppercase tracking-tighter text-red-700 inline-flex items-center gap-1">
-                            <FiXCircle /> Non conforme
-                          </span>
-                        </div>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-          {filteredData.length === 0 && !loading && (
-            <div className="flex flex-col items-center justify-center py-20 bg-gray-50/30 text-center">
-              <div className="w-[80px] h-[80px] rounded-2xl bg-orange-50 flex items-center justify-center mb-4">
-                <EmptyDoorIcon />
+                  Reinitialiser
+                </button>
+                <button
+                  onClick={applyFilters}
+                  className="rounded-xl bg-orange-500 px-4 py-2 text-xs font-bold text-white hover:bg-orange-600"
+                >
+                  Appliquer
+                </button>
               </div>
-              <h3 className="text-2xl leading-none text-gray-900 font-black tracking-tight mb-2">
-                Aucun événement trouvé
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+              <label className="space-y-1.5 xl:col-span-1">
+                <span className="text-xs font-semibold text-gray-500">
+                  Mode de date
+                </span>
+                <div className="inline-flex w-fit bg-gray-100 p-1 rounded-xl">
+                  {[
+                    { id: "day", label: "Jour" },
+                    { id: "range", label: "Plage" },
+                    { id: "week", label: "Semaine" },
+                    { id: "month", label: "Mois" },
+                  ].map((mode) => (
+                    <button
+                      key={mode.id}
+                      onClick={() =>
+                        updateDraftFilter("dateFilterMode", mode.id)
+                      }
+                      className={`px-2.5 py-2 rounded-lg text-xs font-bold transition-all ${draftFilters.dateFilterMode === mode.id ? "bg-white text-orange-600 shadow-sm" : "text-gray-500 hover:text-gray-700"}`}
+                    >
+                      {mode.label}
+                    </button>
+                  ))}
+                </div>
+              </label>
+
+              <label
+                className={`space-y-1.5 ${draftFilters.dateFilterMode === "range" ? "xl:col-span-2" : "xl:col-span-1"}`}
+              >
+                <span className="text-xs font-semibold text-gray-500">
+                  Date
+                </span>
+                <div
+                  className={`flex items-center gap-2 ${draftFilters.dateFilterMode === "range" ? "w-full" : "xl:w-[220px]"}`}
+                >
+                  {draftFilters.dateFilterMode === "day" && (
+                    <input
+                      type="date"
+                      value={draftFilters.filterDate}
+                      onChange={(e) =>
+                        updateDraftFilter("filterDate", e.target.value)
+                      }
+                      className="h-11 w-full rounded-xl border border-gray-200 bg-white px-3 text-sm font-medium text-gray-700 outline-none ring-orange-400 transition focus:ring-2"
+                    />
+                  )}
+                  {draftFilters.dateFilterMode === "range" && (
+                    <>
+                      <input
+                        type="date"
+                        value={draftFilters.filterStartDate}
+                        onChange={(e) =>
+                          updateDraftFilter("filterStartDate", e.target.value)
+                        }
+                        className="h-11 w-full rounded-xl border border-gray-200 bg-white px-3 text-sm font-medium text-gray-700 outline-none ring-orange-400 transition focus:ring-2"
+                      />
+                      <input
+                        type="date"
+                        value={draftFilters.filterEndDate}
+                        onChange={(e) =>
+                          updateDraftFilter("filterEndDate", e.target.value)
+                        }
+                        className="h-11 w-full rounded-xl border border-gray-200 bg-white px-3 text-sm font-medium text-gray-700 outline-none ring-orange-400 transition focus:ring-2"
+                      />
+                    </>
+                  )}
+                  {draftFilters.dateFilterMode === "week" && (
+                    <input
+                      type="week"
+                      value={draftFilters.filterWeek}
+                      onChange={(e) =>
+                        updateDraftFilter("filterWeek", e.target.value)
+                      }
+                      className="h-11 w-full rounded-xl border border-gray-200 bg-white px-3 text-sm font-medium text-gray-700 outline-none ring-orange-400 transition focus:ring-2"
+                    />
+                  )}
+                  {draftFilters.dateFilterMode === "month" && (
+                    <input
+                      type="month"
+                      value={draftFilters.filterMonth}
+                      onChange={(e) =>
+                        updateDraftFilter("filterMonth", e.target.value)
+                      }
+                      className="h-11 w-full rounded-xl border border-gray-200 bg-white px-3 text-sm font-medium text-gray-700 outline-none ring-orange-400 transition focus:ring-2"
+                    />
+                  )}
+                </div>
+              </label>
+
+              <label className="space-y-1.5">
+                <span className="text-xs font-semibold text-gray-500">
+                  Matricule
+                </span>
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                    <FiFilter className="text-gray-400" />
+                  </div>
+                  <input
+                    type="text"
+                    placeholder="Matricule..."
+                    value={draftFilters.filterMatricule}
+                    onChange={(e) =>
+                      updateDraftFilter("filterMatricule", e.target.value)
+                    }
+                    className="h-11 w-full rounded-xl border border-gray-200 bg-white pl-10 pr-3 text-sm font-medium text-gray-700 outline-none ring-orange-400 transition focus:ring-2"
+                  />
+                </div>
+              </label>
+
+              <label className="space-y-1.5">
+                <span className="text-xs font-semibold text-gray-500">
+                  Statut
+                </span>
+                <div className="relative">
+                  <select
+                    value={draftFilters.statusFilter}
+                    onChange={(e) =>
+                      updateDraftFilter("statusFilter", e.target.value)
+                    }
+                    className="h-11 w-full rounded-xl border border-gray-200 bg-white px-3 text-sm font-medium text-gray-700 outline-none ring-orange-400 transition focus:ring-2 appearance-none"
+                  >
+                    <option value="all">Tous</option>
+                    <option value="conforme">Conforme</option>
+                    <option value="non_conforme">Non conforme</option>
+                  </select>
+                  <FiFilter className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                </div>
+              </label>
+            </div>
+          </div>
+
+          {filteredData.length > 0 && (
+            <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm mb-8">
+              <h3 className="text-[11px] font-bold text-gray-400 uppercase tracking-[0.1em] mb-6">
+                OUVERTURES PAR DATE — CONFORME VS NON CONFORME
               </h3>
-              <p className="text-base leading-relaxed text-gray-500 font-medium max-w-lg px-6">
-                Aucune donnée ne correspond à la date sélectionnée.
-                <br />
-                Modifiez les filtres ou choisissez une autre date.
-              </p>
+              <div className="h-[110px] w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart
+                    data={chartData}
+                    margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
+                  >
+                    <CartesianGrid
+                      strokeDasharray="3 3"
+                      vertical={false}
+                      stroke="#f1f5f9"
+                    />
+                    <XAxis
+                      dataKey="date"
+                      tick={{ fill: "#94a3b8", fontSize: 11, fontWeight: 600 }}
+                      axisLine={false}
+                      tickLine={false}
+                    />
+                    <YAxis
+                      tick={{ fill: "#cbd5e1", fontSize: 10, fontWeight: 500 }}
+                      axisLine={false}
+                      tickLine={false}
+                      width={32}
+                    />
+                    <Tooltip
+                      cursor={{ fill: "rgba(241,245,249,0.35)" }}
+                      contentStyle={{
+                        borderRadius: "10px",
+                        border: "1px solid #e2e8f0",
+                        fontSize: 12,
+                      }}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="conforme"
+                      name="Conforme"
+                      stroke="#46B519"
+                      strokeWidth={2}
+                      dot={{
+                        r: 4,
+                        fill: "#46B519",
+                        strokeWidth: 2,
+                        stroke: "#fff",
+                      }}
+                      activeDot={{ r: 6 }}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="non_conforme"
+                      name="Non conforme"
+                      stroke="#FF4B50"
+                      strokeWidth={2}
+                      dot={{
+                        r: 4,
+                        fill: "#FF4B50",
+                        strokeWidth: 2,
+                        stroke: "#fff",
+                      }}
+                      activeDot={{ r: 6 }}
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+              <div className="mt-4 flex items-center justify-center gap-8 text-sm font-semibold text-gray-500">
+                <span className="inline-flex items-center gap-2">
+                  <span className="w-4 h-4 rounded-full bg-[#46B519]" />{" "}
+                  CONFORME
+                </span>
+                <span className="inline-flex items-center gap-2">
+                  <span className="w-4 h-4 rounded-full bg-[#FF4B50]" /> NON
+                  CONFORME
+                </span>
+              </div>
             </div>
           )}
-          {loading && (
-            <div className="flex justify-center py-20">
-              <div className="w-8 h-8 border-4 border-orange-500 border-t-transparent rounded-full animate-spin"></div>
+
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden min-h-[500px]">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm text-left border-collapse">
+                <thead>
+                  <tr className="bg-gray-50/50 border-b border-gray-100">
+                    <th className="px-6 py-2.5 font-bold text-gray-500 uppercase tracking-wider text-[11px]">
+                      Camion
+                    </th>
+                    <th className="px-6 py-2.5 font-bold text-gray-500 uppercase tracking-wider text-[11px]">
+                      Voyage planifié
+                    </th>
+                    <th className="px-6 py-2.5 font-bold text-gray-500 uppercase tracking-wider text-[11px]">
+                      Localisation
+                    </th>
+                    <th className="px-6 py-2.5 font-bold text-gray-500 uppercase tracking-wider text-[11px]">
+                      POI proche
+                    </th>
+                    <th className="px-6 py-2.5 font-bold text-gray-500 uppercase tracking-wider text-[11px]">
+                      Adresse POI
+                    </th>
+                    <th className="px-6 py-2.5 font-bold text-gray-500 uppercase tracking-wider text-[11px]">
+                      Distance
+                    </th>
+                    <th className="px-6 py-2.5 font-bold text-gray-500 uppercase tracking-wider text-[11px]">
+                      Ouverture
+                    </th>
+                    <th className="px-6 py-2.5 font-bold text-gray-500 uppercase tracking-wider text-[11px]">
+                      Date ouv.
+                    </th>
+                    <th className="px-6 py-2.5 font-bold text-gray-500 uppercase tracking-wider text-[11px]">
+                      Durée
+                    </th>
+                    <th className="px-6 py-2.5 font-bold text-gray-500 uppercase tracking-wider text-[11px]">
+                      Date ferm.
+                    </th>
+                    <th className="px-6 py-2.5 font-bold text-gray-500 uppercase tracking-wider text-[11px]">
+                      Statut
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-50">
+                  {filteredData.map((row) => (
+                    <tr
+                      key={row.id}
+                      onClick={() => handleSelectOuverture(row)}
+                      className={`group cursor-pointer transition-all ${selectedOuvertureId === row.id ? "ring-2 ring-inset ring-orange-200" : ""}`}
+                      style={{
+                        backgroundColor:
+                          row.statut === "conforme" ? "#f0fdf4" : "#fef2f2",
+                      }}
+                    >
+                      <td className="px-6 py-2 whitespace-nowrap">
+                        <span className="font-semibold text-gray-900 text-sm">
+                          {row.camion}
+                        </span>
+                      </td>
+                      <td className="px-6 py-2 whitespace-nowrap">
+                        {row.voyagePlanifie ? (
+                          <span className="px-3 py-1 rounded-full text-xs font-bold bg-green-50 text-green-700 border border-green-200">
+                            Oui
+                          </span>
+                        ) : (
+                          <span className="px-3 py-1 rounded-full text-xs font-bold bg-red-50 text-red-700 border border-red-200">
+                            Non
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-6 py-2 whitespace-nowrap">
+                        <span className="inline-flex items-center gap-1.5 font-medium text-gray-600">
+                          <FiMapPin className="text-gray-400" />
+                          {row.localisation}
+                        </span>
+                      </td>
+                      <td className="px-6 py-2 whitespace-nowrap font-medium text-gray-600">
+                        {row.poiProche}
+                      </td>
+                      <td className="px-6 py-2 whitespace-nowrap font-medium text-gray-600">
+                        {row.poiAdresse}
+                      </td>
+                      <td className="px-6 py-2 whitespace-nowrap">
+                        <span className="px-3 py-1 bg-gray-100 rounded-full text-xs font-bold text-gray-700">
+                          {row.distancePoiMetres !== null &&
+                          row.distancePoiMetres !== undefined
+                            ? `${Number(row.distancePoiMetres).toFixed(2)} m`
+                            : "-"}
+                        </span>
+                      </td>
+                      <td className="px-6 py-2 whitespace-nowrap">
+                        <span className="px-3 py-1 bg-orange-50 border border-orange-200 rounded-full text-xs font-bold text-orange-700">
+                          {row.ouverture}
+                        </span>
+                      </td>
+                      <td className="px-6 py-2 whitespace-nowrap font-medium text-gray-600">
+                        <div className="font-semibold text-gray-900 text-sm">
+                          {row.dateOuv}
+                        </div>
+                        <div className="text-[11px] text-gray-400">
+                          {row.dateOuvJour}
+                        </div>
+                      </td>
+                      <td className="px-6 py-2 whitespace-nowrap">
+                        <span className="px-3 py-1 bg-gray-100 rounded-full text-xs font-bold text-gray-700">
+                          {row.duree}
+                        </span>
+                      </td>
+                      <td className="px-6 py-2 whitespace-nowrap font-medium text-gray-600">
+                        <div className="font-semibold text-gray-900 text-sm">
+                          {row.dateFerm}
+                        </div>
+                        {row.dateFermJour && (
+                          <div className="text-[11px] text-gray-400">
+                            {row.dateFermJour}
+                          </div>
+                        )}
+                      </td>
+                      <td className="px-6 py-2">
+                        {row.statut === "conforme" ? (
+                          <div className="flex items-center gap-2">
+                            <div className="w-2 h-2 rounded-full bg-green-500"></div>
+                            <span className="text-[10px] font-semibold uppercase tracking-tighter text-green-700 inline-flex items-center gap-1">
+                              <FiCheckCircle /> Conforme
+                            </span>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-2">
+                            <div className="w-2 h-2 rounded-full bg-red-500"></div>
+                            <span className="text-[10px] font-semibold uppercase tracking-tighter text-red-700 inline-flex items-center gap-1">
+                              <FiXCircle /> Non conforme
+                            </span>
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
-          )}
+
+            {filteredData.length === 0 && !loading && (
+              <div className="flex flex-col items-center justify-center py-20 bg-gray-50/30 text-center">
+                <div className="w-[80px] h-[80px] rounded-2xl bg-orange-50 flex items-center justify-center mb-4">
+                  <EmptyDoorIcon />
+                </div>
+                <h3 className="text-2xl leading-none text-gray-900 font-black tracking-tight mb-2">
+                  Aucun événement trouvé
+                </h3>
+                <p className="text-base leading-relaxed text-gray-500 font-medium max-w-lg px-6">
+                  Aucune donnée ne correspond à la date sélectionnée.
+                  <br />
+                  Modifiez les filtres ou choisissez une autre date.
+                </p>
+              </div>
+            )}
+            {loading && (
+              <div className="flex justify-center py-20">
+                <div className="w-8 h-8 border-4 border-orange-500 border-t-transparent rounded-full animate-spin"></div>
+              </div>
+            )}
+          </div>
         </div>
-      </div>
+      </section>
 
       <MapModal
         isOpen={isMapOpen}

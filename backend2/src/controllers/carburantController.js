@@ -45,6 +45,66 @@ const getEtatMoteurFromCon = (con) => {
   return "inconnu";
 };
 
+const isAnomalie = (statut) => statut && statut !== "normal";
+
+const formatDateKey = (date) =>
+  `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+
+const buildDateRange = (start, end) => {
+  const dates = [];
+  const cursor = new Date(`${start}T00:00:00`);
+  const last = new Date(`${end}T00:00:00`);
+
+  while (cursor <= last) {
+    dates.push(formatDateKey(cursor));
+    cursor.setDate(cursor.getDate() + 1);
+  }
+
+  return dates;
+};
+
+/* ═══════════════════════════════════════════════════════════════════
+   Table anomalie_carburant — auto-create si inexistante
+   ═══════════════════════════════════════════════════════════════════ */
+let _anomalieTableReady = false;
+const ensureAnomalieTable = async () => {
+  if (_anomalieTableReady) return;
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS anomalie_carburant (
+      id SERIAL PRIMARY KEY,
+      matricule VARCHAR(100) NOT NULL,
+      date_transaction DATE NOT NULL,
+      num_ticket VARCHAR(100) NOT NULL DEFAULT '',
+      statut VARCHAR(20) NOT NULL DEFAULT 'EN_ATTENTE',
+      commentaire TEXT DEFAULT '',
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(matricule, date_transaction, num_ticket)
+    )
+  `);
+  _anomalieTableReady = true;
+};
+
+/* ═══════════════════════════════════════════════════════════════════
+   Table reclamation_carburant — auto-create si inexistante
+   ═══════════════════════════════════════════════════════════════════ */
+let _reclamationTableReady = false;
+const ensureReclamationTable = async () => {
+  if (_reclamationTableReady) return;
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS reclamation_carburant (
+      id SERIAL PRIMARY KEY,
+      matricule VARCHAR(100) NOT NULL,
+      date_transaction DATE NOT NULL,
+      num_ticket VARCHAR(100) NOT NULL DEFAULT '',
+      commentaire TEXT NOT NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(matricule, date_transaction, num_ticket)
+    )
+  `);
+  _reclamationTableReady = true;
+};
+
 /* ═══════════════════════════════════════════════════════════════════
    1. getEcartCarburant
       Recherche les ravitaillements d'un camion sur une plage de dates.
@@ -75,7 +135,20 @@ export const getEcartCarburant = async ({
     };
 
     const query = `
-      WITH tt AS (
+      WITH common_matricules AS (
+        SELECT DISTINCT UPPER(TRIM(t.matricule)) as matricule
+        FROM total t
+        WHERE DATE(t.date_transaction) >= $1::date
+          AND DATE(t.date_transaction) <= $2::date
+          AND EXISTS (
+            SELECT 1 FROM voyagetracking_ravitaillement r
+            WHERE UPPER(TRIM(r.matricule_camion)) = UPPER(TRIM(t.matricule))
+              AND DATE(COALESCE(r.date_trans, r."date")) >= $1::date
+              AND DATE(COALESCE(r.date_trans, r."date")) <= $2::date
+          )
+          AND ($3::text IS NULL OR UPPER(TRIM(t.matricule)) = UPPER(TRIM($3::text)))
+      ),
+      tt AS (
         SELECT
           t.num_ticket,
           t.matricule,
@@ -86,6 +159,7 @@ export const getEcartCarburant = async ({
           t.produit,
           t.quantite,
           t.kilometres,
+          t.kilometres_avant,
           t.montant,
           t.prix_unitaire,
           t.lieu,
@@ -103,9 +177,9 @@ export const getEcartCarburant = async ({
             )
           ) AS ts
         FROM total t
-        WHERE t.date_transaction::date >= $1::date
-          AND t.date_transaction::date <= $2::date
-          AND ($3::text IS NULL OR UPPER(TRIM(t.matricule)) = UPPER(TRIM($3::text)))
+        WHERE DATE(t.date_transaction) >= $1::date
+          AND DATE(t.date_transaction) <= $2::date
+          AND UPPER(TRIM(t.matricule)) IN (SELECT matricule FROM common_matricules)
       )
       SELECT
         tt.ts,
@@ -117,9 +191,10 @@ export const getEcartCarburant = async ({
         tt.produit,
         tt.quantite,
         tt.kilometres,
+        tt.kilometres_avant,
         tt.montant,
         tt.lieu AS lieu_station,
-        COALESCE(vr.chauffeur, tt.nom_carte, tt.client, '—') AS chauffeur,
+        COALESCE(vr.chauffeur, tt.code_chauffeur, tt.nom_carte, '—') AS chauffeur,
         vr.qtt AS qtt_gps,
         vr.kms AS kms_gps,
         vr.system_source,
@@ -128,38 +203,41 @@ export const getEcartCarburant = async ({
         vr.lieu AS lieu_gps,
         vr.prod AS produit_gps,
         vr.no_ticket AS ticket_gps,
-        vr.date_trans AS gps_ts
+        vr.date_trans AS gps_ts,
+        vr.type AS type_camion_gps,
+        vr.capacite AS capacite_gps,
+        vr.consm_moy,
+        co.categorie AS categorie_camion,
+        co.obj AS objectif_camion
       FROM tt
-      LEFT JOIN LATERAL (
-        SELECT
-          r.*,
-          ABS(EXTRACT(EPOCH FROM (COALESCE(r.date_trans, r."date"::timestamp) - tt.ts))) AS time_gap,
-          ABS(COALESCE(r.qtt, 0)::numeric - COALESCE(tt.quantite, 0)::numeric) AS qty_gap,
-          CASE
-            WHEN tt.num_ticket IS NOT NULL
-             AND NULLIF(TRIM(tt.num_ticket::text), '') IS NOT NULL
-             AND r.no_ticket IS NOT NULL
-             AND NULLIF(TRIM(r.no_ticket::text), '') IS NOT NULL
-             AND TRIM(tt.num_ticket::text) = TRIM(r.no_ticket::text)
-            THEN 0 ELSE 1
-          END AS ticket_rank
-        FROM voyagetracking_ravitaillement r
-        WHERE UPPER(TRIM(r.matricule_camion)) = UPPER(TRIM(tt.matricule))
-          AND DATE(COALESCE(r.date_trans, r."date"::timestamp)) >= (tt.date_transaction::date - INTERVAL '1 day')
-          AND DATE(COALESCE(r.date_trans, r."date"::timestamp)) <= (tt.date_transaction::date + INTERVAL '1 day')
-        ORDER BY ticket_rank ASC, time_gap ASC, qty_gap ASC
-        LIMIT 1
-      ) vr ON TRUE
-      ORDER BY tt.ts ASC
+      INNER JOIN voyagetracking_ravitaillement vr ON (
+        UPPER(TRIM(vr.matricule_camion)) = UPPER(TRIM(tt.matricule))
+        AND DATE(COALESCE(vr.date_trans, vr."date")) = DATE(tt.ts)
+      )
+      LEFT JOIN camion_objectif co ON UPPER(TRIM(co.matricule)) = UPPER(TRIM(tt.matricule))
+      ORDER BY tt.ts ASC, ABS(EXTRACT(EPOCH FROM (COALESCE(vr.date_trans, vr."date"::timestamp) - tt.ts))) ASC
     `;
 
     const result = await pool.query(query, [start, end, filters.camion]);
 
-    const rows = result.rows.map((row) => {
+    // Grouper par transaction et prendre le meilleur match (plus proche temporellement)
+    const transactionMap = new Map();
+
+    result.rows.forEach((row) => {
+      const key = `${row.matricule}-${row.date_transaction}-${row.num_ticket}`;
+      if (!transactionMap.has(key) || row.qtt_gps != null) {
+        transactionMap.set(key, row);
+      }
+    });
+
+    const rows = Array.from(transactionMap.values()).map((row) => {
       const qteGps = toNum(row.qtt_gps) || 0;
       const qteRav = toNum(row.quantite) || 0;
       const ecart = Math.round((qteRav - qteGps) * 10) / 10;
-      const km = toNum(row.kilometres) || toNum(row.kms_gps) || 0;
+      const km =
+        row.kilometres != null && row.kilometres_avant != null
+          ? toNum(row.kilometres) - toNum(row.kilometres_avant)
+          : toNum(row.kilometres) || toNum(row.kms_gps) || 0;
       const conf =
         qteRav > 0
           ? Math.max(0, Math.min(100, 100 - (Math.abs(ecart) / qteRav) * 100))
@@ -178,14 +256,20 @@ export const getEcartCarburant = async ({
         qteRav,
         ecart,
         km,
-        vitesse: "--",
         conformite,
         alert: Math.abs(ecart) >= 10,
+        dateRaw: row.date_transaction
+          ? new Date(row.date_transaction).toISOString().split("T")[0]
+          : null,
         categorie: row.produit || row.produit_gps || "—",
         site: row.lieu_station || row.lieu_gps || "—",
         noTicket: row.num_ticket || row.ticket_gps || "—",
         latitude: toNum(row.latitude),
         longitude: toNum(row.longitude),
+        type_camion_gps: row.type_camion_gps || row.categorie_camion || "NPR",
+        capacite_gps: toNum(row.capacite_gps) || 250,
+        objectif_camion:
+          toNum(row.objectif_camion) || toNum(row.consm_moy) || 16,
       };
     });
 
@@ -200,22 +284,167 @@ export const getEcartCarburant = async ({
       return true;
     });
 
+    // -------- INTEGRATION API MACHINE LEARNING --------
+    try {
+      if (filteredRows.length > 0) {
+        const mlPayload = filteredRows.map((r) => {
+          const dt = new Date(r.date !== "—" ? r.date : Date.now());
+          return {
+            kilometrage: r.km || 100,
+            type_camion: r.type_camion_gps,
+            objectif_camion: r.objectif_camion,
+            capacite: r.capacite_gps,
+            heure_depart: 8,
+            jour_semaine: dt.getDay(),
+            conditions_meteo: "ensoleillé", // Reconnu par le modèle
+            weathercode_raw: 1,
+            type_trajet: "route_principale", // Reconnu par le modèle ('autoroute', 'route_principale', 'route_secondaire')
+            latitude: r.latitude || 36.8,
+            longitude: r.longitude || 10.1,
+            mois: dt.getMonth() + 1,
+            heure_transaction: dt.getHours(),
+            quantite_station: r.qteRav,
+            quantite_gps: r.qteGps,
+          };
+        });
+
+        // Appel à l'API FastAPI (Port 8000)
+        const mlResponse = await fetch("http://127.0.0.1:8000/predict_batch", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(mlPayload),
+        });
+
+        if (mlResponse.ok) {
+          const mlData = await mlResponse.json();
+          mlData.forEach((res, i) => {
+            filteredRows[i].statut = res.statut; // Injection du statut ML
+            filteredRows[i].ml_details = res.details; // Injection des détails pour l'infobulle
+          });
+        }
+      }
+    } catch (e) {
+      console.warn("API ML injoignable, on utilise la logique basique.");
+    }
+    // ---------------------------------------------------
+
+    // -------- MERGE PERSISTED ANOMALY DECISIONS --------
+    try {
+      await ensureAnomalieTable();
+      const persistedResult = await pool.query(
+        `SELECT UPPER(TRIM(matricule)) AS matricule,
+                TO_CHAR(date_transaction::date, 'YYYY-MM-DD') AS date_key,
+                COALESCE(NULLIF(TRIM(num_ticket), ''), '') AS num_ticket_key,
+                statut AS statut_decision, commentaire
+         FROM anomalie_carburant
+         WHERE date_transaction::date >= $1::date AND date_transaction::date <= $2::date`,
+        [start, end],
+      );
+
+      const decisionMap = new Map();
+      const decisionDateMap = new Map();
+      persistedResult.rows.forEach((row) => {
+        const d = row.date_key || "";
+        const ticket = String(row.num_ticket_key || "").trim();
+        const exactKey = `${row.matricule}-${d}-${ticket}`;
+        const dateOnlyKey = `${row.matricule}-${d}`;
+
+        decisionMap.set(exactKey, {
+          statut: row.statut_decision,
+          commentaire: row.commentaire,
+        });
+
+        if (!decisionDateMap.has(dateOnlyKey)) {
+          decisionDateMap.set(dateOnlyKey, {
+            statut: row.statut_decision,
+            commentaire: row.commentaire,
+          });
+        }
+      });
+
+      filteredRows.forEach((row) => {
+        const isAnomaly = row.statut && row.statut !== "normal";
+        if (isAnomaly) {
+          const dateStr = row.dateRaw || "";
+          const ticket =
+            row.noTicket && row.noTicket !== "—" && row.noTicket !== "-"
+              ? String(row.noTicket).trim()
+              : "";
+          const matriculeKey = String(row.camion).trim().toUpperCase();
+          const exactKey = `${matriculeKey}-${dateStr}-${ticket}`;
+          const dateOnlyKey = `${matriculeKey}-${dateStr}`;
+          const decision =
+            decisionMap.get(exactKey) || decisionDateMap.get(dateOnlyKey);
+          if (decision) {
+            row.statut_decision = decision.statut;
+            row.commentaire_decision = decision.commentaire;
+          } else {
+            row.statut_decision = "EN_ATTENTE";
+          }
+          row.ml_statut = row.statut;
+        } else {
+          row.statut_decision = null;
+        }
+      });
+    } catch (e) {
+      console.warn("Erreur lecture anomalie_carburant:", e.message);
+      filteredRows.forEach((row) => {
+        if (row.statut && row.statut !== "normal") {
+          row.statut_decision = "EN_ATTENTE";
+          row.ml_statut = row.statut;
+        }
+      });
+    }
+    // ---------------------------------------------------
+
     const totalRav = filteredRows.reduce((sum, r) => sum + r.qteRav, 0);
     const totalGps = filteredRows.reduce((sum, r) => sum + r.qteGps, 0);
     const ecartTotal = filteredRows.reduce(
       (sum, r) => sum + Math.abs(r.ecart),
       0,
     );
-    const alertesVol = filteredRows.filter(
-      (r) => Math.abs(r.ecart) >= 10,
+    const anomaliesDetectees = filteredRows.filter((r) =>
+      isAnomalie(r.statut),
     ).length;
-    const reclamations = filteredRows.filter(
-      (r) => Math.abs(r.ecart) >= 15,
-    ).length;
-    const conformes = filteredRows.filter((r) => Math.abs(r.ecart) <= 5).length;
-    const tauxConformite =
+    const tauxFraudeDetecte =
       filteredRows.length > 0
-        ? Math.round((conformes / filteredRows.length) * 100)
+        ? Math.round((anomaliesDetectees / filteredRows.length) * 100)
+        : 0;
+
+    const camionsCritiques = new Map();
+    filteredRows.forEach((row) => {
+      if (row.statut !== "anomalie_critique") return;
+      const camionKey = String(row.camion || "")
+        .trim()
+        .toUpperCase();
+      if (!camionKey) return;
+      camionsCritiques.set(
+        camionKey,
+        (camionsCritiques.get(camionKey) || 0) + 1,
+      );
+    });
+    const camionsARisque = Array.from(camionsCritiques.values()).filter(
+      (count) => count >= 2,
+    ).length;
+
+    const riskDays = buildDateRange(start, end);
+    const dailyRiskMap = new Map(riskDays.map((day) => [day, 0]));
+    filteredRows.forEach((row) => {
+      const dateKey = row.dateRaw || null;
+      if (!dateKey || !dailyRiskMap.has(dateKey)) return;
+      dailyRiskMap.set(
+        dateKey,
+        dailyRiskMap.get(dateKey) + Math.abs(row.ecart),
+      );
+    });
+
+    const risqueGaspillageSerie = riskDays.map((day) => ({
+      date: day,
+      value: Math.round((dailyRiskMap.get(day) || 0) * 10) / 10,
+    }));
+    const risqueGaspillageMoyen =
+      riskDays.length > 0
+        ? Math.round((ecartTotal / riskDays.length) * 10) / 10
         : 0;
 
     const unique = (arr) =>
@@ -234,10 +463,13 @@ export const getEcartCarburant = async ({
       success: true,
       data: filteredRows,
       stats: {
+        gaspillageTotal: Math.round(ecartTotal * 10) / 10,
+        tauxFraudeDetecte,
+        fraudesDetectees: anomaliesDetectees,
+        camionsARisque,
+        risqueGaspillageMoyen,
+        risqueGaspillageSerie,
         ecartTotal: Math.round(ecartTotal * 10) / 10,
-        tauxConformite,
-        alertesVol,
-        reclamations,
         totalRav: Math.round(totalRav * 10) / 10,
         totalGps: Math.round(totalGps * 10) / 10,
         transactions: filteredRows.length,
@@ -366,5 +598,212 @@ export const getNiveauCarburant = async (
       },
       { status: 500 },
     );
+  }
+};
+
+/* ═══════════════════════════════════════════════════════════════════
+   4. updateAnomalieStatut
+      Persiste la décision utilisateur (EN_ATTENTE / CONFIRMEE / REJETEE)
+   ═══════════════════════════════════════════════════════════════════ */
+export const updateAnomalieStatut = async ({
+  matricule,
+  dateTransaction,
+  numTicket,
+  statut,
+  commentaire,
+}) => {
+  try {
+    await ensureAnomalieTable();
+
+    // Normalize numTicket: treat placeholder '—' or '-' as empty string
+    const normalizeTicket = (t) => {
+      if (t == null) return "";
+      const s = String(t).trim();
+      return s === "—" || s === "-" ? "" : s;
+    };
+    const nt = normalizeTicket(numTicket);
+
+    const result = await pool.query(
+      `INSERT INTO anomalie_carburant (matricule, date_transaction, num_ticket, statut, commentaire, updated_at)
+       VALUES (UPPER(TRIM($1)), $2::date, $3, $4, $5, NOW())
+       ON CONFLICT (matricule, date_transaction, num_ticket)
+       DO UPDATE SET statut = $4, commentaire = COALESCE($5, anomalie_carburant.commentaire), updated_at = NOW()
+       RETURNING *`,
+      [matricule, dateTransaction, nt, statut, commentaire || ""],
+    );
+
+    return { success: true, data: result.rows[0] };
+  } catch (error) {
+    console.error("Error updateAnomalieStatut:", error);
+    return {
+      success: false,
+      message: error.message,
+    };
+  }
+};
+
+/* ═══════════════════════════════════════════════════════════════════
+   5. submitReclamation
+      Enregistre une réclamation pour une anomalie confirmée
+   ═══════════════════════════════════════════════════════════════════ */
+export const submitReclamation = async ({
+  matricule,
+  dateTransaction,
+  numTicket,
+  commentaire,
+}) => {
+  try {
+    await ensureReclamationTable();
+    await ensureAnomalieTable();
+
+    // Normalize numTicket: treat placeholder '—' or '-' as empty string
+    const normalizeTicketR = (t) => {
+      if (t == null) return "";
+      const s = String(t).trim();
+      return s === "—" || s === "-" ? "" : s;
+    };
+    const ntR = normalizeTicketR(numTicket);
+
+    // Enregistrer la réclamation
+    const reclamationResult = await pool.query(
+      `INSERT INTO reclamation_carburant (matricule, date_transaction, num_ticket, commentaire)
+       VALUES (UPPER(TRIM($1)), $2::date, $3, $4)
+       ON CONFLICT (matricule, date_transaction, num_ticket)
+       DO UPDATE SET commentaire = $4
+       RETURNING *`,
+      [matricule, dateTransaction, ntR, commentaire || ""],
+    );
+
+    // Mettre à jour le statut de l'anomalie à CONFIRMEE (utiliser INSERT...ON CONFLICT comme Rejeter)
+    console.log("submitReclamation - Inserting/Updating anomalie with key:", {
+      matricule,
+      dateTransaction,
+      numTicket: ntR,
+      statut: "CONFIRMEE",
+    });
+
+    const anomalieResult = await pool.query(
+      `INSERT INTO anomalie_carburant (matricule, date_transaction, num_ticket, statut, commentaire, updated_at)
+       VALUES (UPPER(TRIM($1)), $2::date, $3, 'CONFIRMEE', $4, NOW())
+       ON CONFLICT (matricule, date_transaction, num_ticket)
+       DO UPDATE SET statut = 'CONFIRMEE', commentaire = COALESCE($4, anomalie_carburant.commentaire), updated_at = NOW()
+       RETURNING *`,
+      [matricule, dateTransaction, ntR, commentaire || ""],
+    );
+
+    console.log("submitReclamation - Anomalie upsert result:", {
+      rowCount: anomalieResult.rowCount,
+      statut: anomalieResult.rows[0]?.statut,
+    });
+
+    return { success: true, data: reclamationResult.rows[0] };
+  } catch (error) {
+    console.error("Error submitReclamation:", error);
+    return {
+      success: false,
+      message: error.message,
+    };
+  }
+};
+
+/* ═══════════════════════════════════════════════════════════════════
+   6. getReclamations
+      Liste toutes les réclamations avec le statut anomalie associé
+   ═══════════════════════════════════════════════════════════════════ */
+export const getReclamations = async ({
+  matricule,
+  dateStart,
+  dateEnd,
+} = {}) => {
+  try {
+    await ensureReclamationTable();
+    await ensureAnomalieTable();
+
+    let paramIndex = 1;
+    const conditions = [];
+    const params = [];
+
+    if (dateStart) {
+      conditions.push(`r.date_transaction::date >= $${paramIndex}::date`);
+      params.push(dateStart);
+      paramIndex++;
+    }
+
+    if (dateEnd) {
+      conditions.push(`r.date_transaction::date <= $${paramIndex}::date`);
+      params.push(dateEnd);
+      paramIndex++;
+    }
+
+    if (matricule) {
+      conditions.push(`UPPER(TRIM(r.matricule)) = UPPER(TRIM($${paramIndex}))`);
+      params.push(matricule);
+      paramIndex++;
+    }
+
+    const whereClause =
+      conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+
+    const query = `
+      SELECT
+        r.id,
+        r.matricule,
+        TO_CHAR(r.date_transaction, 'YYYY-MM-DD') AS date_transaction,
+        r.num_ticket,
+        r.commentaire,
+        r.created_at,
+        COALESCE(a.statut, 'CONFIRMEE') AS statut_anomalie,
+        a.commentaire AS commentaire_anomalie,
+        a.updated_at AS anomalie_updated_at
+      FROM reclamation_carburant r
+      LEFT JOIN anomalie_carburant a ON (
+        UPPER(TRIM(a.matricule)) = UPPER(TRIM(r.matricule))
+        AND a.date_transaction = r.date_transaction
+        AND COALESCE(NULLIF(TRIM(a.num_ticket), ''), '') = COALESCE(NULLIF(TRIM(r.num_ticket), ''), '')
+      )
+      ${whereClause}
+      ORDER BY r.created_at DESC
+    `;
+
+    const result = await pool.query(query, params);
+
+    const data = result.rows.map((row) => ({
+      id: row.id,
+      matricule: row.matricule,
+      dateTransaction: row.date_transaction,
+      numTicket: row.num_ticket || "—",
+      commentaire: row.commentaire || "",
+      createdAt: row.created_at,
+      statutAnomalie: row.statut_anomalie,
+      commentaireAnomalie: row.commentaire_anomalie || "",
+      anomalieUpdatedAt: row.anomalie_updated_at,
+    }));
+
+    // Stats
+    const total = data.length;
+    const confirmees = data.filter(
+      (d) => d.statutAnomalie === "CONFIRMEE",
+    ).length;
+    const enAttente = data.filter(
+      (d) => d.statutAnomalie === "EN_ATTENTE",
+    ).length;
+    const rejetees = data.filter((d) => d.statutAnomalie === "REJETEE").length;
+    const matricules = [...new Set(data.map((d) => d.matricule))].sort();
+
+    return {
+      success: true,
+      data,
+      stats: { total, confirmees, enAttente, rejetees },
+      filters: { matricules },
+      meta: { dateStart: dateStart || null, dateEnd: dateEnd || null },
+    };
+  } catch (error) {
+    console.error("Error getReclamations:", error);
+    return {
+      success: false,
+      message: error.message,
+      data: [],
+      stats: { total: 0, confirmees: 0, enAttente: 0, rejetees: 0 },
+    };
   }
 };
