@@ -3,27 +3,23 @@
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
-import { FiBell, FiAlertTriangle, FiUnlock, FiDroplet, FiMonitor } from 'react-icons/fi';
+import { FiBell, FiAlertTriangle, FiUnlock, FiPhoneCall, FiFileText } from 'react-icons/fi';
+
+// Dériver icon / color / bgColor depuis le type de notification
+const TYPE_STYLE = {
+    'Arrêt':        { icon: FiAlertTriangle, color: 'text-orange-600', bgColor: 'bg-orange-50' },
+    'Porte':        { icon: FiUnlock,        color: 'text-amber-600',  bgColor: 'bg-amber-50' },
+    'Appel':        { icon: FiPhoneCall,     color: 'text-violet-600', bgColor: 'bg-violet-50' },
+    'Réclamation':  { icon: FiFileText,      color: 'text-red-600',    bgColor: 'bg-red-50' },
+};
+const DEFAULT_STYLE = { icon: FiBell, color: 'text-gray-600', bgColor: 'bg-gray-50' };
 
 const TopNavbar = () => {
     const [isDropdownOpen, setIsDropdownOpen] = useState(false);
     const [notifications, setNotifications] = useState([]);
-    const [readNotificationIds, setReadNotificationIds] = useState(new Set());
     const [loading, setLoading] = useState(false);
     const dropdownRef = useRef(null);
     const pollingIntervalRef = useRef(null);
-
-    // Charger les IDs lus depuis localStorage au montage
-    useEffect(() => {
-        try {
-            const stored = localStorage.getItem('readNotificationIds');
-            if (stored) {
-                setReadNotificationIds(new Set(JSON.parse(stored)));
-            }
-        } catch (err) {
-            console.error("Erreur lecture localStorage:", err);
-        }
-    }, []);
 
     // Récupérer les notifications depuis l'API
     const fetchNotifications = async () => {
@@ -43,16 +39,10 @@ const TopNavbar = () => {
             if (response.ok) {
                 const result = await response.json();
                 if (result.success && result.data) {
-                    // Mapper les icônes des strings aux composants
-                    const mappedNotifications = result.data.map(notif => ({
-                        ...notif,
-                        icon: {
-                            'FiAlertTriangle': FiAlertTriangle,
-                            'FiUnlock': FiUnlock,
-                            'FiDroplet': FiDroplet,
-                            'FiMonitor': FiMonitor,
-                        }[notif.icon] || FiBell,
-                    }));
+                    const mappedNotifications = result.data.map(notif => {
+                        const style = TYPE_STYLE[notif.type] || DEFAULT_STYLE;
+                        return { ...notif, icon: style.icon, color: style.color, bgColor: style.bgColor };
+                    });
                     setNotifications(mappedNotifications);
                 }
             }
@@ -60,6 +50,29 @@ const TopNavbar = () => {
             console.error("Erreur lors du chargement des notifications:", err);
         } finally {
             setLoading(false);
+        }
+    };
+
+    // Marquer une notification comme lue via l'API
+    const markAsRead = async (notificationId) => {
+        try {
+            const token = localStorage.getItem('token');
+            if (!token) return;
+
+            await fetch("/api/notifications", {
+                method: "PUT",
+                headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${token}`,
+                },
+                body: JSON.stringify({ action: "markAsRead", notificationId }),
+            });
+
+            setNotifications(prev =>
+                prev.map(n => n.id === notificationId ? { ...n, isNew: false } : n)
+            );
+        } catch (err) {
+            console.error("Erreur markAsRead:", err);
         }
     };
 
@@ -81,19 +94,10 @@ const TopNavbar = () => {
         };
     }, []);
 
-    // Écouter les changements de notifications (quand on marque comme lu)
+    // Écouter les changements de notifications
     useEffect(() => {
         const handleNotificationUpdate = () => {
             fetchNotifications();
-            // Recharger aussi les IDs lus depuis localStorage
-            try {
-                const stored = localStorage.getItem('readNotificationIds');
-                if (stored) {
-                    setReadNotificationIds(new Set(JSON.parse(stored)));
-                }
-            } catch (err) {
-                console.error("Erreur lecture localStorage:", err);
-            }
         };
 
         window.addEventListener('notificationUpdated', handleNotificationUpdate);
@@ -113,7 +117,7 @@ const TopNavbar = () => {
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, []);
 
-    const unreadCount = notifications.filter(n => !readNotificationIds.has(n.id)).length;
+    const unreadCount = notifications.filter(n => n.isNew).length;
 
     return (
         <header className="h-[68px] bg-[#f7f7f8] border-b border-gray-200 px-6 flex items-center justify-between">
@@ -154,39 +158,39 @@ const TopNavbar = () => {
                         </div>
 
                         <div className="max-h-[260px] overflow-y-auto">
-                            {notifications.slice(0, 3).map((notification) => {
-                                const isRead = readNotificationIds.has(notification.id);
-                                return (
-                                    <div
-                                        key={notification.id}
-                                        className="p-4 border-b border-gray-50 hover:bg-orange-50/30 transition-colors flex gap-3"
-                                    >
-                                        <div className={`mt-0.5 p-2 rounded-xl h-fit ${notification.bgColor} ${notification.color}`}>
-                                            <notification.icon className="text-[16px]" />
-                                        </div>
-                                        <div className="flex-1 min-w-0">
-                                            <p className="text-sm font-bold text-gray-900 truncate tracking-tight">
-                                                {notification.title}
-                                            </p>
-                                            <p className="text-xs text-gray-500 truncate mt-0.5">
-                                                {notification.message}
-                                            </p>
-                                            <div className="flex items-center gap-2 mt-1.5">
-                                                <p className="text-[11px] text-gray-400 font-medium">
-                                                    {notification.date}
-                                                </p>
-                                                <span className="text-gray-300">•</span>
-                                                <p className="text-[11px] text-gray-400 font-medium">
-                                                    {notification.time}
-                                                </p>
-                                            </div>
-                                        </div>
-                                        {!isRead && (
-                                            <div className="mt-2 w-2 h-2 bg-orange-500 rounded-full flex-shrink-0" />
-                                        )}
+                            {notifications.slice(0, 4).map((notification) => (
+                                <div
+                                    key={notification.id}
+                                    className="p-4 border-b border-gray-50 hover:bg-orange-50/30 transition-colors flex gap-3 cursor-pointer"
+                                    onClick={() => {
+                                        if (notification.isNew) markAsRead(notification.id);
+                                    }}
+                                >
+                                    <div className={`mt-0.5 p-2 rounded-xl h-fit ${notification.bgColor} ${notification.color}`}>
+                                        <notification.icon className="text-[16px]" />
                                     </div>
-                                );
-                            })}
+                                    <div className="flex-1 min-w-0">
+                                        <p className="text-sm font-bold text-gray-900 truncate tracking-tight">
+                                            {notification.title}
+                                        </p>
+                                        <p className="text-xs text-gray-500 truncate mt-0.5">
+                                            {notification.message}
+                                        </p>
+                                        <div className="flex items-center gap-2 mt-1.5">
+                                            <p className="text-[11px] text-gray-400 font-medium">
+                                                {notification.date}
+                                            </p>
+                                            <span className="text-gray-300">•</span>
+                                            <p className="text-[11px] text-gray-400 font-medium">
+                                                {notification.time}
+                                            </p>
+                                        </div>
+                                    </div>
+                                    {notification.isNew && (
+                                        <div className="mt-2 w-2 h-2 bg-orange-500 rounded-full flex-shrink-0" />
+                                    )}
+                                </div>
+                            ))}
                         </div>
 
                         <div className="p-3 bg-gray-50/60 border-t border-gray-100 text-center">

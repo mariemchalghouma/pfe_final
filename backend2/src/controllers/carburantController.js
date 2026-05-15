@@ -98,10 +98,25 @@ const ensureReclamationTable = async () => {
       date_transaction DATE NOT NULL,
       num_ticket VARCHAR(100) NOT NULL DEFAULT '',
       commentaire TEXT NOT NULL,
+      soumis_par VARCHAR(200) DEFAULT '',
+      chauffeur VARCHAR(200) DEFAULT '',
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       UNIQUE(matricule, date_transaction, num_ticket)
     )
   `);
+
+  // Migrations — ajouter les colonnes si elles n'existent pas
+  try {
+    await pool.query(`
+      ALTER TABLE reclamation_carburant
+      ADD COLUMN IF NOT EXISTS soumis_par VARCHAR(200) DEFAULT ''
+    `);
+    await pool.query(`
+      ALTER TABLE reclamation_carburant
+      ADD COLUMN IF NOT EXISTS chauffeur VARCHAR(200) DEFAULT ''
+    `);
+  } catch (_) { /* colonnes déjà existantes */ }
+
   _reclamationTableReady = true;
 };
 
@@ -202,6 +217,7 @@ export const getEcartCarburant = async ({
         vr.longitude,
         vr.lieu AS lieu_gps,
         vr.prod AS produit_gps,
+     
         vr.no_ticket AS ticket_gps,
         vr.date_trans AS gps_ts,
         vr.type AS type_camion_gps,
@@ -216,6 +232,7 @@ export const getEcartCarburant = async ({
       )
       LEFT JOIN camion_objectif co ON UPPER(TRIM(co.matricule)) = UPPER(TRIM(tt.matricule))
       ORDER BY tt.ts ASC, ABS(EXTRACT(EPOCH FROM (COALESCE(vr.date_trans, vr."date"::timestamp) - tt.ts))) ASC
+ 
     `;
 
     const result = await pool.query(query, [start, end, filters.camion]);
@@ -511,7 +528,7 @@ export const getNiveauCarburant = async (
 
     /* ── Points GPS + niveau réel (table mesure) ── */
     const mesureQuery = `
-      SELECT DISTINCT ON (date_trunc('hour', m.gps_dt))
+      SELECT DISTINCT ON (date_trunc('minute', m.gps_dt))
         m.gps_dt,
         m.fuel,
         m.latitude,
@@ -522,10 +539,9 @@ export const getNiveauCarburant = async (
         AND DATE(m.gps_dt) >= $2
         AND DATE(m.gps_dt) <= $3
         AND m.latitude IS NOT NULL AND m.longitude IS NOT NULL
-      ORDER BY date_trunc('hour', m.gps_dt), m.gps_dt ASC
+      ORDER BY date_trunc('minute', m.gps_dt), m.gps_dt ASC
     `;
     const mesureResult = await pool.query(mesureQuery, [camion, start, end]);
-
     /* ── Ravitaillements (pour repérer les pleins sur le graphe) ── */
     const ravitQuery = `
       SELECT
@@ -538,7 +554,6 @@ export const getNiveauCarburant = async (
       ORDER BY COALESCE(r.date_trans, r."date"::timestamp) ASC
     `;
     const ravitResult = await pool.query(ravitQuery, [camion, start, end]);
-
     /* ── Build ravitaillement lookup (by hour) ── */
     const ravitHours = new Set();
     ravitResult.rows.forEach((r) => {
@@ -651,6 +666,8 @@ export const submitReclamation = async ({
   dateTransaction,
   numTicket,
   commentaire,
+  soumisPar,
+  chauffeur,
 }) => {
   try {
     await ensureReclamationTable();
@@ -665,13 +682,15 @@ export const submitReclamation = async ({
     const ntR = normalizeTicketR(numTicket);
 
     // Enregistrer la réclamation
+    const nomSoumis = (soumisPar || "").trim();
+    const nomChauffeur = (chauffeur || "").trim();
     const reclamationResult = await pool.query(
-      `INSERT INTO reclamation_carburant (matricule, date_transaction, num_ticket, commentaire)
-       VALUES (UPPER(TRIM($1)), $2::date, $3, $4)
+      `INSERT INTO reclamation_carburant (matricule, date_transaction, num_ticket, commentaire, soumis_par, chauffeur)
+       VALUES (UPPER(TRIM($1)), $2::date, $3, $4, $5, $6)
        ON CONFLICT (matricule, date_transaction, num_ticket)
-       DO UPDATE SET commentaire = $4
+       DO UPDATE SET commentaire = $4, soumis_par = $5, chauffeur = $6
        RETURNING *`,
-      [matricule, dateTransaction, ntR, commentaire || ""],
+      [matricule, dateTransaction, ntR, commentaire || "", nomSoumis, nomChauffeur],
     );
 
     // Mettre à jour le statut de l'anomalie à CONFIRMEE (utiliser INSERT...ON CONFLICT comme Rejeter)
@@ -751,6 +770,8 @@ export const getReclamations = async ({
         TO_CHAR(r.date_transaction, 'YYYY-MM-DD') AS date_transaction,
         r.num_ticket,
         r.commentaire,
+        COALESCE(r.soumis_par, '') AS soumis_par,
+        COALESCE(r.chauffeur, '') AS chauffeur,
         r.created_at,
         COALESCE(a.statut, 'CONFIRMEE') AS statut_anomalie,
         a.commentaire AS commentaire_anomalie,
@@ -773,6 +794,8 @@ export const getReclamations = async ({
       dateTransaction: row.date_transaction,
       numTicket: row.num_ticket || "—",
       commentaire: row.commentaire || "",
+      soumisPar: row.soumis_par || "",
+      chauffeur: row.chauffeur || "",
       createdAt: row.created_at,
       statutAnomalie: row.statut_anomalie,
       commentaireAnomalie: row.commentaire_anomalie || "",

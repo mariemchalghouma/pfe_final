@@ -9,6 +9,8 @@ export const getOuvertures = async ({ date, dateStart, dateEnd, camion }) => {
 
     let query = `
       SELECT
+          o.ctid AS row_ctid,
+          o.etat AS db_etat,
           o.date_ouverture,
           o.date_fermeture,
           o.assetname,
@@ -139,17 +141,23 @@ export const getOuvertures = async ({ date, dateStart, dateEnd, camion }) => {
         row.duree_minutes !== null ? Number(row.duree_minutes) : null;
       const voyagePlanifie = Boolean(row.voyage_planifie);
       const hasPoiProgramme = Boolean(row.planned_poi_id);
-      const statut =
+      const calculatedStatut =
         voyagePlanifie &&
-        hasPoiProgramme &&
-        distancePoiProgrammeMetres !== null &&
-        distancePoiProgrammeMetres <= rayonPoiProgrammeMetres &&
-        dureeMinutes !== null &&
-        dureeMinutes <= DUREE_MAX_MINUTES
+          hasPoiProgramme &&
+          distancePoiProgrammeMetres !== null &&
+          distancePoiProgrammeMetres <= rayonPoiProgrammeMetres &&
+          dureeMinutes !== null &&
+          dureeMinutes <= DUREE_MAX_MINUTES
           ? "conforme"
           : "non_conforme";
 
+      const statut = row.db_etat || calculatedStatut;
+      const needsUpdate = !row.db_etat;
+
       return {
+        needsUpdate,
+        row_ctid: row.row_ctid,
+        etat: statut,
         dateOuverture: row.date_ouverture,
         dateFermeture: row.date_fermeture,
         assetName: row.assetname,

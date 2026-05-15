@@ -185,7 +185,8 @@ export const getCamionsTempsReel = async (date) => {
         s.stopduration,
         s.address AS stop_address,
         s.latitude AS stop_lat,
-        s.longitude AS stop_lng
+        s.longitude AS stop_lng,
+        s.etat AS stop_etat
       FROM voyage_7d v
       LEFT JOIN gps_latest_by_day g
         ON g.camion_norm = v.camion_norm
@@ -256,7 +257,8 @@ export const getCamionsTempsReel = async (date) => {
           poiCode && otdcodes.some((code) => normalize(code) === poiCode);
 
         // Conforme = distance ≤ 10m ET arrêt planifié
-        const isConforme = minDistance <= 10 && isPlanned;
+        const isConformeCalculated = minDistance <= 10 && isPlanned;
+        const isConforme = row.stop_etat ? (row.stop_etat === "conforme") : isConformeCalculated;
 
         arret = {
           debut: hasStopRecord
@@ -361,7 +363,7 @@ export const getCamionsGantt = async (date) => {
       SELECT DISTINCT
         camion, beginstoptime, endstoptime, stopduration,
         latitude, longitude, address,
-        latitude AS avg_lat, longitude AS avg_lng
+        latitude AS avg_lat, longitude AS avg_lng, etat AS db_etat
       FROM voyage_tracking_stops
       WHERE DATE(beginstoptime) = $1
       ORDER BY camion, beginstoptime ASC
@@ -391,7 +393,7 @@ export const getCamionsGantt = async (date) => {
     const ouverturesResult = await pool.query(
       `
       SELECT camion, date_ouverture, date_fermeture, adress, lat, lng, duration,
-             temp_ouv, temp_var, temp_fer
+             temp_ouv, temp_var, temp_fer, etat AS db_etat
       FROM voyagetracking_port_ouvert
       WHERE DATE(date_ouverture) = $1
         AND date_fermeture IS NOT NULL
@@ -399,6 +401,45 @@ export const getCamionsGantt = async (date) => {
     `,
       [targetDate],
     );
+
+    // 6) Latest GPS position per camion (for real-time tracking + ETA)
+    const gpsLatestResult = await pool.query(
+      `
+      SELECT DISTINCT ON (UPPER(TRIM(camion::text)))
+        UPPER(TRIM(camion::text)) AS camion_norm,
+        latitude, longitude, speed, gps_timestamp
+      FROM local_histo_gps_all
+      WHERE DATE(gps_timestamp) = $1
+        AND latitude IS NOT NULL AND longitude IS NOT NULL
+      ORDER BY UPPER(TRIM(camion::text)), gps_timestamp DESC
+    `,
+      [targetDate],
+    );
+
+    // 7) Appels
+    // historique_appels schema (Postgres) uses: camion_id, ts_detection/date_appel, mode_appel, type_nc...
+    // (Older code expected camion/start_time/direction; keep mapping compatible with the UI.)
+    let appelsResult = { rows: [] };
+    try {
+      appelsResult = await pool.query(
+        `
+        SELECT
+          session_id,
+          camion_id,
+          source_table,
+          source_id,
+          type_nc,
+          mode_appel,
+          COALESCE(date_appel, ts_detection) AS call_time
+        FROM historique_appels
+        WHERE DATE(COALESCE(date_appel, ts_detection)) = $1
+          AND session_id IS NOT NULL
+        `,
+        [targetDate],
+      );
+    } catch (err) {
+      console.warn("historique_appels table query error:", err.message);
+    }
 
     // === Build lookup maps ===
     const normKey = (raw) => (raw || "").replace(/\s+/g, "").toUpperCase();
@@ -439,6 +480,81 @@ export const getCamionsGantt = async (date) => {
         tempOuv: o.temp_ouv ? Number(o.temp_ouv) : null,
         tempVar: o.temp_var ? Number(o.temp_var) : null,
         tempFer: o.temp_fer ? Number(o.temp_fer) : null,
+        db_etat: o.db_etat,
+      });
+    });
+
+    // GPS latest map
+    const gpsLatestMap = {};
+    gpsLatestResult.rows.forEach((g) => {
+      gpsLatestMap[normKey(g.camion_norm)] = {
+        lat: parseFloat(g.latitude),
+        lng: parseFloat(g.longitude),
+        speed: g.speed ? Number(g.speed) : 0,
+        timestamp: new Date(g.gps_timestamp),
+      };
+    });
+
+    // Appels map
+    const appelsMap = {};
+    const formatTypeNc = (rawTypeNc) => {
+      const t = (rawTypeNc || "").toString().toLowerCase();
+      if (!t) return "Inconnu";
+      if (t === "arret_non_prevu") return "Arrêt non prévu";
+      if (t === "chute_carburant") return "Chute de carburant";
+      if (t === "arret_et_chute_carburant") return "Arrêt et chute de carburant";
+      if (t === "arret_et_porte_ouverte") return "Arrêt et porte ouverte";
+      if (t === "porte_ouverte") return "Porte ouverte";
+      if (t === "manuel") return "Manuel";
+      // Fallback readable label
+      const pretty = t.replace(/_/g, " ");
+      return pretty.charAt(0).toUpperCase() + pretty.slice(1);
+    };
+
+    appelsResult.rows.forEach((a) => {
+      let resolvedCamion = a.camion_id;
+
+      // Fallback: extract camion from source_id when it contains "CAMION|timestamp"
+      if (!resolvedCamion && a.source_id && String(a.source_id).includes("|")) {
+        resolvedCamion = String(a.source_id).split("|")[0];
+      }
+
+      if (!resolvedCamion) return;
+
+      const key = normKey(resolvedCamion);
+      if (!appelsMap[key]) appelsMap[key] = [];
+
+      const mode = (a.mode_appel || "").toString().toLowerCase();
+      const direction = mode.startsWith("in") || a.type_nc === "appel_entrant"
+        ? "entrant"
+        : "sortant";
+
+      let typeLabel = "Inconnu";
+      if (direction === "sortant") {
+        typeLabel = formatTypeNc(a.type_nc);
+
+        // Fallback heuristics when type_nc is missing
+        if (typeLabel === "Inconnu") {
+          if (a.source_table === "voyage_tracking_stops") {
+            typeLabel = "Arrêt non prévu";
+          } else if (
+            a.source_table === "mesures" ||
+            a.source_table === "voyagetracking_ravitaillement"
+          ) {
+            typeLabel = "Chute de carburant";
+          }
+        }
+      } else {
+        typeLabel = "Appel entrant";
+      }
+
+      if (!a.call_time) return;
+
+      appelsMap[key].push({
+        sessionId: a.session_id,
+        time: new Date(a.call_time).toISOString(),
+        direction, // "entrant" or "sortant"
+        type: typeLabel,
       });
     });
 
@@ -491,7 +607,8 @@ export const getCamionsGantt = async (date) => {
         poiCode && (otdcodes || []).some((code) => normalize(code) === poiCode);
 
       // Conforme = distance ≤ 10m AND planned
-      const isConforme = minDistance <= 10 && isPlanned;
+      const isConformeCalculated = minDistance <= 10 && isPlanned;
+      const isConforme = stop.db_etat ? (stop.db_etat === "conforme") : isConformeCalculated;
 
       return {
         type: isConforme ? "stop_conforme" : "stop_non_conforme",
@@ -548,6 +665,7 @@ export const getCamionsGantt = async (date) => {
       const stops = stopsMap[camionKey] || [];
       const ravits = ravitMap[camionKey] || [];
       const ouvertures = ouverturesMap[camionKey] || [];
+      const appels = appelsMap[camionKey] || [];
       const otdcodes = [...new Set(vg.otdcodes)]; // unique OTDCODE list
 
       // Trip window: VOYHRD → VOYHRF
@@ -572,7 +690,13 @@ export const getCamionsGantt = async (date) => {
       // Collect ALL events within the trip window [tripStart, tripEnd]
       const events = [];
 
-      // — Stops within trip window
+      // Filter calls that happened during this trip
+      const tripAppels = appels.filter((a) => {
+        const callTime = new Date(a.time);
+        return callTime >= tripStart && callTime <= tripEnd;
+      });
+
+      // ── Process Stops ──within trip window
       stops.forEach((stop) => {
         const sStart = new Date(stop.beginstoptime);
         const durationMin = Number(stop.stopduration) || 0;
@@ -632,6 +756,31 @@ export const getCamionsGantt = async (date) => {
         if (o.end <= tripStart || o.start >= tripEnd) return;
         const clampedStart = o.start < tripStart ? tripStart : o.start;
         const clampedEnd = o.end > tripEnd ? tripEnd : o.end;
+
+        let isConforme = false;
+        let nearestPoi = null;
+        let minDistance = Infinity;
+
+        if (o.db_etat) {
+          isConforme = o.db_etat === "conforme";
+        } else {
+          if (o.lat && o.lng) {
+            pois.forEach((poi) => {
+              const dist = calculateDistance(
+                o.lat, o.lng,
+                parseFloat(poi.lat), parseFloat(poi.lng)
+              );
+              if (dist < minDistance) {
+                minDistance = dist;
+                nearestPoi = poi;
+              }
+            });
+          }
+          const poiCode = nearestPoi ? normKey(nearestPoi.code) : null;
+          const isPlanned = poiCode && otdcodes.some((code) => normKey(code) === poiCode);
+          isConforme = minDistance <= 10 && isPlanned;
+        }
+
         events.push({
           type: "ouverture_porte",
           start: clampedStart,
@@ -640,9 +789,9 @@ export const getCamionsGantt = async (date) => {
           address: o.adresse || "—",
           lat: o.lat,
           lng: o.lng,
-          poiName: null,
-          distance: null,
-          conforme: null,
+          poiName: nearestPoi ? `${nearestPoi.code} - ${nearestPoi.nom}` : null,
+          distance: minDistance !== Infinity ? Math.round(minDistance) : null,
+          conforme: isConforme,
           tempOuv: o.tempOuv,
           tempVar: o.tempVar,
           tempFer: o.tempFer,
@@ -655,15 +804,41 @@ export const getCamionsGantt = async (date) => {
       // Build final segments: fill gaps with 'driving'
       const segments = [];
       let cursor = tripStart;
+      const now = new Date();
 
       events.forEach((evt) => {
         if (evt.start > cursor) {
-          segments.push({
-            type: "driving",
-            start: cursor.toISOString(),
-            end: evt.start.toISOString(),
-            duration: Math.round((evt.start - cursor) / 60000),
-          });
+          const gapStart = cursor;
+          const gapEnd = evt.start;
+          
+          if (now > gapStart && now < gapEnd) {
+            segments.push({
+              type: "driving",
+              start: gapStart.toISOString(),
+              end: now.toISOString(),
+              duration: Math.round((now - gapStart) / 60000),
+            });
+            segments.push({
+              type: "planned_driving",
+              start: now.toISOString(),
+              end: gapEnd.toISOString(),
+              duration: Math.round((gapEnd - now) / 60000),
+            });
+          } else if (now <= gapStart) {
+            segments.push({
+              type: "planned_driving",
+              start: gapStart.toISOString(),
+              end: gapEnd.toISOString(),
+              duration: Math.round((gapEnd - gapStart) / 60000),
+            });
+          } else {
+            segments.push({
+              type: "driving",
+              start: gapStart.toISOString(),
+              end: gapEnd.toISOString(),
+              duration: Math.round((gapEnd - gapStart) / 60000),
+            });
+          }
         }
         segments.push({
           ...evt,
@@ -675,18 +850,161 @@ export const getCamionsGantt = async (date) => {
 
       // Fill remaining time until tripEnd with driving
       if (cursor < tripEnd) {
-        segments.push({
-          type: "driving",
-          start: cursor.toISOString(),
-          end: tripEnd.toISOString(),
-          duration: Math.round((tripEnd - cursor) / 60000),
-        });
+        if (now > cursor && now < tripEnd) {
+          segments.push({
+            type: "driving",
+            start: cursor.toISOString(),
+            end: now.toISOString(),
+            duration: Math.round((now - cursor) / 60000),
+          });
+          segments.push({
+            type: "planned_driving",
+            start: now.toISOString(),
+            end: tripEnd.toISOString(),
+            duration: Math.round((tripEnd - now) / 60000),
+          });
+        } else if (now <= cursor) {
+          segments.push({
+            type: "planned_driving",
+            start: cursor.toISOString(),
+            end: tripEnd.toISOString(),
+            duration: Math.round((tripEnd - cursor) / 60000),
+          });
+        } else {
+          segments.push({
+            type: "driving",
+            start: cursor.toISOString(),
+            end: tripEnd.toISOString(),
+            duration: Math.round((tripEnd - cursor) / 60000),
+          });
+        }
       }
 
       const totalMinutes = Math.round((tripEnd - tripStart) / 60000);
       const drivingMinutes = segments
         .filter((s) => s.type === "driving")
         .reduce((sum, s) => sum + (s.duration || 0), 0);
+
+      // ── POI progress: planned destinations with visited/remaining ──
+      const normalizeCode = (val) =>
+        (val || "").toString().replace(/\s+/g, "").toUpperCase();
+
+      const plannedPois = vg.clients
+        .sort((a, b) => a.ordre - b.ordre)
+        .map((client) => {
+          const poiMatch = pois.find(
+            (p) => normalizeCode(p.code) === normalizeCode(client.code),
+          );
+          return {
+            ordre: client.ordre,
+            code: client.code,
+            client: client.client, // Keep original SITSIRETEDI
+            poiName: poiMatch ? poiMatch.nom : null,
+            region: client.region,
+            poi: poiMatch
+              ? {
+                  code: poiMatch.code,
+                  nom: poiMatch.nom,
+                  lat: parseFloat(poiMatch.lat),
+                  lng: parseFloat(poiMatch.lng),
+                }
+              : null,
+            visited: false,
+            arrivalTime: null,
+            arrivalAddress: null,
+          };
+        });
+
+      // Mark visited POIs only when a conform stop validates the planned POI.
+      // Restrict to stops that overlap the current trip window to avoid false positives.
+      const tripStops = stops
+        .map((stop) => {
+          const sStart = new Date(stop.beginstoptime);
+          if (Number.isNaN(sStart.getTime())) return null;
+          const durationMin = Number(stop.stopduration) || 0;
+          const sEnd = new Date(
+            stop.endstoptime || sStart.getTime() + durationMin * 60000,
+          );
+          if (Number.isNaN(sEnd.getTime())) return null;
+          if (sEnd <= tripStart || sStart >= tripEnd) return null;
+
+          const classification = classifyStop(stop, otdcodes);
+          const poiCode = classification.poiName
+            ? normalizeCode(classification.poiName.split(" - ")[0])
+            : null;
+
+          return {
+            stop,
+            sStart,
+            classification,
+            poiCode,
+          };
+        })
+        .filter(Boolean);
+
+      plannedPois.forEach((pp) => {
+        if (!pp.poi) return;
+
+        let best = null; // { sStart: Date, stop }
+
+        const plannedCode = normalizeCode(pp.code);
+
+        tripStops.forEach((item) => {
+          if (!item.classification?.conforme) return;
+          if (!item.poiCode || item.poiCode !== plannedCode) return;
+
+          if (!best || item.sStart < best.sStart) {
+            best = { sStart: item.sStart, stop: item.stop };
+          }
+        });
+
+        if (best) {
+          pp.visited = true;
+          pp.arrivalTime = best.sStart.toISOString();
+          pp.arrivalAddress = best.stop.address || null;
+        }
+      });
+
+      // Next unvisited POI + ETA
+      const nextPoiItem = plannedPois.find((pp) => !pp.visited && pp.poi);
+      let nextPoi = null;
+      const gpsPos = gpsLatestMap[camionKey];
+
+      if (nextPoiItem && gpsPos) {
+        const distKm =
+          calculateDistance(
+            gpsPos.lat,
+            gpsPos.lng,
+            nextPoiItem.poi.lat,
+            nextPoiItem.poi.lng,
+          ) / 1000;
+        const avgSpeed = gpsPos.speed > 5 ? gpsPos.speed : 40;
+        const hoursToArrive = distKm / avgSpeed;
+        const etaDate = new Date(
+          gpsPos.timestamp.getTime() + hoursToArrive * 3600000,
+        );
+        nextPoi = {
+          code: nextPoiItem.code,
+          nom: nextPoiItem.poi.nom,
+          lat: nextPoiItem.poi.lat,
+          lng: nextPoiItem.poi.lng,
+          distanceKm: Math.round(distKm * 10) / 10,
+          eta: etaDate.toISOString(),
+          etaFormatted: `${String(etaDate.getHours()).padStart(2, "0")}:${String(etaDate.getMinutes()).padStart(2, "0")}`,
+        };
+      } else if (nextPoiItem) {
+        nextPoi = {
+          code: nextPoiItem.code,
+          nom: nextPoiItem.poi?.nom || nextPoiItem.code,
+          lat: nextPoiItem.poi?.lat,
+          lng: nextPoiItem.poi?.lng,
+          distanceKm: null,
+          eta: null,
+          etaFormatted: null,
+        };
+      }
+
+      const visitedCount = plannedPois.filter((pp) => pp.visited).length;
 
       return {
         id: `${vg.camion}-${vg.voycle}`,
@@ -696,7 +1014,7 @@ export const getCamionsGantt = async (date) => {
         heureDep: numToTimeStr(vg.heureDep),
         heureFin: numToTimeStr(vg.heureFin),
         dureeTrajet: `${Math.floor(totalMinutes / 60)}h${totalMinutes % 60 > 0 ? String(totalMinutes % 60).padStart(2, "0") : ""}`,
-        clients: vg.clients,
+        clients: plannedPois,
         nbClients: vg.clients.length,
         segments,
         hasData: true,
@@ -713,6 +1031,13 @@ export const getCamionsGantt = async (date) => {
           .length,
         nbOuverturesPorte: segments.filter((s) => s.type === "ouverture_porte")
           .length,
+        plannedPois,
+        nextPoi,
+        poiProgress: { visited: visitedCount, total: plannedPois.length },
+        appels: tripAppels,
+        currentPosition: gpsPos
+          ? { lat: gpsPos.lat, lng: gpsPos.lng, speed: gpsPos.speed }
+          : null,
       };
     });
 

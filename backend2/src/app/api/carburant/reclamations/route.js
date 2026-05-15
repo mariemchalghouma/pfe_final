@@ -3,7 +3,7 @@ import { submitReclamation } from "@/controllers/carburantController";
 export async function POST(request) {
   try {
     const body = await request.json();
-    const { matricule, dateTransaction, numTicket, commentaire } = body;
+    const { matricule, dateTransaction, numTicket, commentaire, soumisPar, chauffeur } = body;
 
     if (!matricule || !dateTransaction || !commentaire) {
       return Response.json(
@@ -21,6 +21,8 @@ export async function POST(request) {
       dateTransaction,
       numTicket,
       commentaire,
+      soumisPar,
+      chauffeur,
     });
 
     return Response.json(result, {

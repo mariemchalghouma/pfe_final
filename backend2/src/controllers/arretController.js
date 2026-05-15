@@ -1,8 +1,5 @@
 import pool from "../config/database.js";
 
-const stopsResponseCache = new Map();
-const STOPS_CACHE_TTL_MS = 60_000;
-
 /**
  * Calcule la distance entre deux points GPS en mètres (Formule Haversine)
  */
@@ -15,9 +12,9 @@ export const calculateDistance = (lat1, lon1, lat2, lon2) => {
   const a =
     Math.sin(dLat / 2) * Math.sin(dLat / 2) +
     Math.cos((lat1 * Math.PI) / 180) *
-      Math.cos((lat2 * Math.PI) / 180) *
-      Math.sin(dLon / 2) *
-      Math.sin(dLon / 2);
+    Math.cos((lat2 * Math.PI) / 180) *
+    Math.sin(dLon / 2) *
+    Math.sin(dLon / 2);
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 
   return R * c;
@@ -48,6 +45,15 @@ const formatLocalDateTime = (value) => {
   return `${toLocalDateKey(date)} ${pad2(date.getHours())}:${pad2(date.getMinutes())}`;
 };
 
+const numToDateTime = (dateKey, value) => {
+  if (!dateKey || value === null || value === undefined) return null;
+  const num = Number(value);
+  if (Number.isNaN(num)) return null;
+  const h = Math.floor(num / 100);
+  const m = num % 100;
+  return new Date(`${dateKey}T${pad2(h)}:${pad2(m)}:00`);
+};
+
 /**
  * Récupérer tous les arrêts de la table voyage_tracking_stops
  * Logique de conformité :
@@ -65,34 +71,134 @@ export const getStops = async ({
   try {
     const start = dateStart || date || new Date().toISOString().split("T")[0];
     const end = dateEnd || date || start;
-    const dayRange = Math.floor(
-      (new Date(end) - new Date(start)) / (1000 * 60 * 60 * 24),
-    );
-    const cacheTTL =
-      dayRange > 7 ? 5 * 60_000 : dayRange > 1 ? 3 * 60_000 : 60_000;
-    const cacheKey = `${start}|${end}|${rayon}|${limit}|${offset}`;
-    const cachedEntry = stopsResponseCache.get(cacheKey);
-    if (cachedEntry && cachedEntry.expiresAt > Date.now()) {
-      return Response.json(cachedEntry.payload);
-    }
-
     const normalize = (val) =>
       (val || "").toString().replace(/\s+/g, "").toUpperCase();
+
+    const poiResult = await pool.query(`
+      SELECT code, description as nom, lat, lng, rayon FROM poi
+    `);
+    const pois = poiResult.rows;
+
+    // Récupérer les données de planification voyage_chauffeur pour la période
+    const voyageResult = await pool.query(
+      `
+     
+      SELECT "PLAMOTI", "VOYDTD", "VOYCLE", "SALNOM", "SALTEL", "RGILIBL",
+             "SITSIRETEDI", "OTDCODE", "PLATOUORDRE", "VOYHRD", "VOYHRF"
+ 
+      FROM voyage_chauffeur
+      WHERE "VOYDTD" >= $1::date
+        AND "VOYDTD" < ($2::date + INTERVAL '1 day')
+    `,
+      [start, end],
+    );
+    const voyages = voyageResult.rows;
+
+    const parsedPois = pois
+      .map((poi) => ({
+        ...poi,
+        latNum: Number(poi.lat),
+        lngNum: Number(poi.lng),
+      }))
+      .filter(
+        (poi) => Number.isFinite(poi.latNum) && Number.isFinite(poi.lngNum),
+      );
+
+    const poiByCode = new Map(
+      parsedPois.map((poi) => [normalize(poi.code), poi]),
+    );
+
+    const voyagesByCamionDate = new Map();
+    voyages.forEach((voyage) => {
+      const key = `${normalize(voyage.PLAMOTI)}|${toLocalDateKey(voyage.VOYDTD)}`;
+      if (!voyagesByCamionDate.has(key)) voyagesByCamionDate.set(key, []);
+      voyagesByCamionDate.get(key).push(voyage);
+    });
+
+    const voyageGroups = new Map();
+    voyages.forEach((voyage) => {
+      const dateKey = toLocalDateKey(voyage.VOYDTD);
+      const key = `${normalize(voyage.PLAMOTI)}|${dateKey}|${voyage.VOYCLE || ""}`;
+      if (!voyageGroups.has(key)) {
+        voyageGroups.set(key, {
+          key,
+          camion: voyage.PLAMOTI,
+          voycle: voyage.VOYCLE || null,
+          dateKey,
+          heureDep: null,
+          heureFin: null,
+          clients: [],
+        });
+      }
+
+      const group = voyageGroups.get(key);
+      const hrd = Number(voyage.VOYHRD);
+      const hrf = Number(voyage.VOYHRF);
+      if (Number.isFinite(hrd) && (!group.heureDep || hrd < group.heureDep)) {
+        group.heureDep = hrd;
+      }
+      if (Number.isFinite(hrf) && (!group.heureFin || hrf > group.heureFin)) {
+        group.heureFin = hrf;
+      }
+
+      group.clients.push({
+        ordre: Number(voyage.PLATOUORDRE) || 0,
+        code: voyage.OTDCODE || null,
+        client: voyage.SITSIRETEDI || "—",
+        region: voyage.RGILIBL || "—",
+      });
+    });
+
+    voyageGroups.forEach((group) => {
+      const orderedClients = group.clients
+        .filter((c) => c.code)
+        .sort((a, b) => a.ordre - b.ordre);
+
+      group.plannedPois = orderedClients.map((client) => {
+        const poiMatch = poiByCode.get(normalize(client.code));
+        return {
+          ordre: client.ordre,
+          code: client.code,
+          client: client.client,
+          region: client.region,
+          poi: poiMatch
+            ? {
+                code: poiMatch.code,
+                nom: poiMatch.nom,
+                lat: poiMatch.latNum,
+                lng: poiMatch.lngNum,
+              }
+            : null,
+        };
+      });
+
+      group.tripStart = numToDateTime(group.dateKey, group.heureDep);
+      group.tripEnd = numToDateTime(group.dateKey, group.heureFin);
+    });
+
+    const voyageGroupsByCamionDate = new Map();
+    voyageGroups.forEach((group) => {
+      const key = `${normalize(group.camion)}|${group.dateKey}`;
+      if (!voyageGroupsByCamionDate.has(key)) {
+        voyageGroupsByCamionDate.set(key, []);
+      }
+      voyageGroupsByCamionDate.get(key).push(group);
+    });
 
     const query = `
       WITH dedup_stops AS (
         SELECT DISTINCT ON (
-            s.address,
+            s.camion,
             s.beginstoptime,
             s.endstoptime,
             s.stopduration,
-            s.camion,
             s.latitude,
             s.longitude,
-            s.systemgps,
-            s.created_date
+            s.address,
+            s.systemgps
         )
-            s.ctid::text AS ctid,
+            s.ctid::text AS row_ctid,
+            s.etat AS db_etat,
             s.camion,
             s.beginstoptime,
             s.endstoptime,
@@ -100,31 +206,34 @@ export const getStops = async ({
             s.latitude AS lat,
             s.longitude AS lng,
             s.address,
-            s.systemgps,
-            s.created_date
+            s.systemgps
         FROM voyage_tracking_stops s
         WHERE s.beginstoptime >= $1::date
           AND s.beginstoptime < ($2::date + INTERVAL '1 day')
+          AND s.endstoptime IS NOT NULL
+          AND s.endstoptime >= $1::date
+          AND s.endstoptime < ($2::date + INTERVAL '1 day')
         ORDER BY
-            s.address,
+            s.camion,
             s.beginstoptime,
             s.endstoptime,
             s.stopduration,
-            s.camion,
             s.latitude,
             s.longitude,
+            s.address,
             s.systemgps,
-            s.created_date,
+            CASE WHEN s.etat = 'conforme' THEN 0 ELSE 1 END,
             s.ctid
       ),
       page_stops AS (
         SELECT *
         FROM dedup_stops
-        ORDER BY beginstoptime DESC, ctid
+        ORDER BY beginstoptime DESC, row_ctid
         LIMIT $3 OFFSET $4
       )
       SELECT
-          p.ctid,
+          p.row_ctid,
+          p.db_etat,
           p.camion,
           p.beginstoptime,
           p.endstoptime,
@@ -144,49 +253,12 @@ export const getStops = async ({
           WHERE REPLACE(UPPER(TRIM(g.camion)), ' ', '') = REPLACE(UPPER(TRIM(p.camion)), ' ', '')
             AND g.gps_timestamp BETWEEN p.beginstoptime AND p.endstoptime
       ) gps ON TRUE
-      ORDER BY p.beginstoptime DESC, p.ctid
+      ORDER BY p.beginstoptime DESC, p.row_ctid
     `;
 
-    const [poiResult, voyageResult, result] = await Promise.all([
-      pool.query(`
-        SELECT code, description as nom, lat, lng, rayon FROM poi
-      `),
-      pool.query(
-        `
-        SELECT "PLAMOTI", "VOYDTD", "VOYCLE", "SALNOM", "SALTEL", "RGILIBL", "SITSIRETEDI", "OTDCODE"
-        FROM voyage_chauffeur
-        WHERE "VOYDTD" >= $1::date
-          AND "VOYDTD" < ($2::date + INTERVAL '1 day')
-      `,
-        [start, end],
-      ),
-      pool.query(query, [start, end, limit, offset]),
-    ]);
+    const result = await pool.query(query, [start, end, limit, offset]);
 
-    const parsedPois = poiResult.rows
-      .map((poi) => ({
-        ...poi,
-        latNum: Number(poi.lat),
-        lngNum: Number(poi.lng),
-      }))
-      .filter(
-        (poi) => Number.isFinite(poi.latNum) && Number.isFinite(poi.lngNum),
-      );
-
-    const poiByCode = new Map(
-      parsedPois.map((poi) => [normalize(poi.code), poi]),
-    );
-
-    const voyagesByCamionDate = new Map();
-    voyageResult.rows.forEach((voyage) => {
-      const key = `${normalize(voyage.PLAMOTI)}|${toLocalDateKey(voyage.VOYDTD)}`;
-      if (!voyagesByCamionDate.has(key)) voyagesByCamionDate.set(key, []);
-      voyagesByCamionDate.get(key).push(voyage);
-    });
-
-    const arrets = result.rows.map((row) => {
-      // Utiliser ctid (row ID interne PostgreSQL) pour une vraie clé unique
-      const stableId = row.ctid;
+    const arrets = result.rows.map((row, index) => {
       const avgLat = row.avg_lat != null ? Number(row.avg_lat) : NaN;
       const avgLng = row.avg_lng != null ? Number(row.avg_lng) : NaN;
       const rowLat = row.lat != null ? Number(row.lat) : NaN;
@@ -266,11 +338,11 @@ export const getStops = async ({
       const plannedDistance =
         plannedPoi && hasRefCoords
           ? calculateDistance(
-              refLat,
-              refLng,
-              plannedPoi.latNum,
-              plannedPoi.lngNum,
-            )
+            refLat,
+            refLng,
+            plannedPoi.latNum,
+            plannedPoi.lngNum,
+          )
           : Infinity;
 
       const plannedPoiRayon =
@@ -287,11 +359,16 @@ export const getStops = async ({
         : null;
 
       // Conformité finale: planification trouvée + OTDCODE lié à un POI + distance dans le rayon du POI programmé
-      const isConforme =
+      const isConformeCalculated =
         !!matchedVoyage &&
         !!plannedPoi &&
         plannedDistance !== Infinity &&
         plannedDistance <= plannedPoiRayon;
+
+      const calculatedEtat = isConformeCalculated ? "conforme" : "non_conforme";
+      const etat = row.db_etat || calculatedEtat;
+      const isConforme = etat === "conforme";
+      const needsUpdate = !row.db_etat;
 
       let destinationName = "-";
       if (matchedVoyage && matchedVoyage.OTDCODE) {
@@ -301,9 +378,35 @@ export const getStops = async ({
           : matchedVoyage.OTDCODE;
       }
 
+      const matchedVoyageKey = matchedVoyage
+        ? `${normalize(matchedVoyage.PLAMOTI)}|${toLocalDateKey(matchedVoyage.VOYDTD)}|${matchedVoyage.VOYCLE || ""}`
+        : null;
+
+      const stopStart = row.beginstoptime ? new Date(row.beginstoptime) : null;
+      const stopEnd = row.endstoptime ? new Date(row.endstoptime) : null;
+
+      const groupLookupKey = `${stopCamionNorm}|${stopDate}`;
+      const candidateGroups = voyageGroupsByCamionDate.get(groupLookupKey) || [];
+      let matchedGroup = null;
+
+      if (candidateGroups.length === 1) {
+        matchedGroup = candidateGroups[0];
+      } else if (candidateGroups.length > 1 && stopStart && stopEnd) {
+        matchedGroup = candidateGroups.find((group) => {
+          if (!group.tripStart || !group.tripEnd) return false;
+          return !(stopEnd <= group.tripStart || stopStart >= group.tripEnd);
+        });
+      }
+
+      const voyageKeyForValidation = matchedGroup ? matchedGroup.key : matchedVoyageKey;
+
       return {
-        id: stableId,
+        needsUpdate,
+        row_ctid: row.row_ctid,
+        id: row.row_ctid,
         camion: row.camion || "Inconnu",
+        beginstoptime: row.beginstoptime,
+        endstoptime: row.endstoptime,
         date: formatLocalDateTime(row.beginstoptime),
         duree: row.stopduration
           ? `${row.stopduration.hours || 0}h ${row.stopduration.minutes || 0}min`
@@ -321,6 +424,7 @@ export const getStops = async ({
         nVoyage: "-",
         destination_programmee: destinationName,
         status: isConforme ? "conforme" : "non_conforme",
+        etat,
         lat: refLat,
         lng: refLng,
         distance: nearestDistanceMeters,
@@ -328,20 +432,123 @@ export const getStops = async ({
         distance_poi_programme: plannedDistanceMeters,
         rayon_poi_programme: plannedRayonMeters,
         action: isConforme ? null : "ajouter_poi",
+        validatedPois: [],
+        nextDestination: null,
+        _voyageKey: voyageKeyForValidation,
+        _stopStart: stopStart,
+        _stopEnd: stopEnd,
+        _stopLat: refLat,
+        _stopLng: refLng,
       };
     });
 
-    const payload = {
-      success: true,
-      data: arrets,
-      meta: { rayon, limit, offset, hasMore: arrets.length === limit },
-    };
-    stopsResponseCache.set(cacheKey, {
-      payload,
-      expiresAt: Date.now() + cacheTTL,
+    const stopsByVoyageKey = new Map();
+    arrets.forEach((arret) => {
+      if (!arret._voyageKey) return;
+      if (!stopsByVoyageKey.has(arret._voyageKey)) {
+        stopsByVoyageKey.set(arret._voyageKey, []);
+      }
+      stopsByVoyageKey.get(arret._voyageKey).push(arret);
     });
 
-    return Response.json(payload);
+    const visitedDistanceMeters = 500;
+
+    voyageGroups.forEach((group, key) => {
+      const plannedPois = group.plannedPois || [];
+      if (plannedPois.length === 0) return;
+
+      const stopsForVoyage = stopsByVoyageKey.get(key) || [];
+      if (stopsForVoyage.length === 0) return;
+
+      const tripStart = group.tripStart;
+      const tripEnd = group.tripEnd;
+
+      const stopsWithinTrip = stopsForVoyage.filter((stop) => {
+        if (!tripStart || !tripEnd || !stop._stopStart || !stop._stopEnd) return true;
+        return !(stop._stopEnd <= tripStart || stop._stopStart >= tripEnd);
+      });
+
+      plannedPois.forEach((pp) => {
+        if (!pp.poi || !Number.isFinite(pp.poi.lat) || !Number.isFinite(pp.poi.lng)) return;
+
+        let bestStop = null;
+        let bestDistance = null;
+
+        stopsWithinTrip.forEach((stop) => {
+          if (!Number.isFinite(stop._stopLat) || !Number.isFinite(stop._stopLng)) return;
+          const dist = calculateDistance(
+            pp.poi.lat,
+            pp.poi.lng,
+            stop._stopLat,
+            stop._stopLng,
+          );
+          if (dist > visitedDistanceMeters) return;
+
+          if (!bestStop || (stop._stopStart && stop._stopStart < bestStop._stopStart)) {
+            bestStop = stop;
+            bestDistance = dist;
+          }
+        });
+
+        if (bestStop) {
+          bestStop.validatedPois = bestStop.validatedPois || [];
+          bestStop.validatedPois.push({
+            code: pp.code,
+            nom: pp.poi?.nom || pp.client || pp.code,
+            label: pp.poi?.nom ? `${pp.code} - ${pp.poi.nom}` : pp.code,
+            ordre: pp.ordre,
+            distance: bestDistance != null ? Math.round(bestDistance) : null,
+          });
+        }
+      });
+
+      const orderedPlanned = [...plannedPois].sort((a, b) => a.ordre - b.ordre);
+      const orderedStops = [...stopsWithinTrip].sort((a, b) => {
+        if (!a._stopStart || !b._stopStart) return 0;
+        return a._stopStart - b._stopStart;
+      });
+
+      const visitedCodes = new Set();
+      orderedStops.forEach((stop) => {
+        if (stop.status === "conforme") {
+          (stop.validatedPois || []).forEach((poi) => {
+            if (poi.code) visitedCodes.add(normalize(poi.code));
+          });
+        }
+
+        const nextPoi = orderedPlanned.find(
+          (pp) => pp.code && !visitedCodes.has(normalize(pp.code)),
+        );
+
+        if (nextPoi) {
+          stop.nextDestination = nextPoi.poi?.nom
+            ? `${nextPoi.code} - ${nextPoi.poi.nom}`
+            : nextPoi.client
+              ? `${nextPoi.code} - ${nextPoi.client}`
+              : nextPoi.code;
+        }
+      });
+    });
+
+    arrets.forEach((arret) => {
+      delete arret._voyageKey;
+      delete arret._stopStart;
+      delete arret._stopEnd;
+      delete arret._stopLat;
+      delete arret._stopLng;
+    });
+
+
+    return Response.json({
+      success: true,
+      data: arrets,
+      meta: {
+        rayon,
+        limit,
+        offset,
+        hasMore: arrets.length === limit,
+      },
+    });
   } catch (error) {
     console.error("Error getStops:", error);
     return Response.json(

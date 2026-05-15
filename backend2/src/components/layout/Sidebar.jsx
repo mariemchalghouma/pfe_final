@@ -46,9 +46,9 @@ const Sidebar = () => {
 
     const mainMenu = [
         { name: 'Dashboard', path: '/dashboard', icon: FiGrid },
-        { name: 'Suivie Camions', path: '/camions', icon: FiTruck },
-        { name: 'Suivi Arrêt', path: '/suivi-arret', icon: FiStopCircle },
-        { name: 'Ouverture Porte', path: '/ouverture-porte', icon: FiUnlock },
+        { name: 'Suivie Voyages', path: '/camions', icon: FiTruck },
+        { name: 'Suivi Arrêts', path: '/suivi-arret', icon: FiStopCircle },
+        { name: 'Ouverture Portes', path: '/ouverture-porte', icon: FiUnlock },
         {
             name: 'Carburant',
             path: '/carburant',
@@ -113,19 +113,19 @@ const Sidebar = () => {
                 {!isCollapsed && item.subMenu && visibleSubItems.length > 0 && isSubMenuOpen && (
                     <div className="ml-8 space-y-1 border-l border-white/10 pl-3">
                         {visibleSubItems.map((subItem) => (
-                                <Link
-                                    key={subItem.path}
-                                    href={subItem.path}
-                                    className={`flex items-center gap-2.5 rounded-lg px-3 py-2 text-[12px] font-semibold transition-colors
+                            <Link
+                                key={subItem.path}
+                                href={subItem.path}
+                                className={`flex items-center gap-2.5 rounded-lg px-3 py-2 text-[12px] font-semibold transition-colors
                                     ${isActive(subItem.path)
-                                            ? 'bg-white/10 text-orange-300'
-                                            : 'text-slate-300 hover:bg-white/10 hover:text-white'
-                                        }`}
-                                >
-                                    <subItem.icon className="text-sm" />
-                                    <span>{subItem.name}</span>
-                                </Link>
-                            ))}
+                                        ? 'bg-white/10 text-orange-300'
+                                        : 'text-slate-300 hover:bg-white/10 hover:text-white'
+                                    }`}
+                            >
+                                <subItem.icon className="text-sm" />
+                                <span>{subItem.name}</span>
+                            </Link>
+                        ))}
                     </div>
                 )}
             </div>
@@ -202,9 +202,8 @@ const Sidebar = () => {
 
                 <button
                     onClick={handleLogout}
-                    className={`flex items-center gap-3 w-full p-2.5 rounded-xl text-red-300 hover:text-red-200 hover:bg-red-500/10 transition-colors font-bold ${
-                        isCollapsed ? 'justify-center' : ''
-                    }`}
+                    className={`flex items-center gap-3 w-full p-2.5 rounded-xl text-red-300 hover:text-red-200 hover:bg-red-500/10 transition-colors font-bold ${isCollapsed ? 'justify-center' : ''
+                        }`}
                 >
                     <FiLogOut className={`text-lg ${isCollapsed ? '' : 'shrink-0'}`} />
                     {!isCollapsed && <span className="text-[13px]">Déconnexion</span>}

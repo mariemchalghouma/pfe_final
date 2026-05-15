@@ -30,6 +30,7 @@ import {
   ResponsiveContainer,
 } from "recharts";
 import { carburantAPI } from "@/services/api";
+import { useAuth } from "@/context/AuthContext";
 
 const defaultStats = {
   gaspillageTotal: 0,
@@ -565,6 +566,7 @@ function ReclamationModal({ isOpen, row, onClose, onSubmit, isLoading }) {
       dateTransaction: row.dateRaw,
       numTicket: row.noTicket,
       commentaire,
+      chauffeur: row.chauffeur || "",
     });
     setCommentaire("");
   };
@@ -912,6 +914,7 @@ function TableauGaspillage({
 
 // ─── Page principale ─────────────────────────────────────────────────────────
 export default function CarburantPage() {
+  const { user } = useAuth();
   const initialDates = useMemo(() => getInitialDates(), []);
 
   // Filtres et données pour Ravitaillement (transactions normales)
@@ -1089,7 +1092,13 @@ export default function CarburantPage() {
   const handleSubmitReclamation = async (reclamationData) => {
     try {
       setActionLoading(true);
-      const result = await carburantAPI.submitReclamation(reclamationData);
+      const nomUtilisateur = user
+        ? `${user.first_name || user.name || ""} ${user.last_name || ""}`.trim() || user.identifiant || ""
+        : "";
+      const result = await carburantAPI.submitReclamation({
+        ...reclamationData,
+        soumisPar: nomUtilisateur,
+      });
       if (result.success) {
         setDataGaspillage((prev) => ({
           ...prev,

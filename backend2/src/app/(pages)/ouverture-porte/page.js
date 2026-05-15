@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState, useEffect, useCallback } from "react";
+import Link from "next/link";
 import {
   FiTarget,
   FiCheckCircle,
@@ -8,6 +9,8 @@ import {
   FiMapPin,
   FiFilter,
   FiMap,
+  FiPhone,
+  FiPhoneOff,
 } from "react-icons/fi";
 import { ouverturesAPI } from "@/services/api";
 import MapModal from "@/components/map/MapModal";
@@ -107,6 +110,7 @@ const OuverturePorte = () => {
   const [selectedOuvertureId, setSelectedOuvertureId] = useState(null);
   const [isMapOpen, setIsMapOpen] = useState(false);
   const [mapPositions, setMapPositions] = useState([]);
+  const [appelsData] = useState([]);
 
   const updateDraftFilter = (key, value) => {
     setDraftFilters((prev) => ({ ...prev, [key]: value }));
@@ -196,10 +200,10 @@ const OuverturePorte = () => {
           const statut =
             item.statut ??
             (voyagePlanifie &&
-            distancePoiMetres !== null &&
-            distancePoiMetres < 10 &&
-            dureeMinutes !== null &&
-            dureeMinutes < 35
+              distancePoiMetres !== null &&
+              distancePoiMetres < 10 &&
+              dureeMinutes !== null &&
+              dureeMinutes < 35
               ? "conforme"
               : "non_conforme");
 
@@ -216,18 +220,18 @@ const OuverturePorte = () => {
             ouverture: "Oui",
             dateOuv: dateOuv
               ? dateOuv.toLocaleTimeString("fr-FR", {
-                  hour: "2-digit",
-                  minute: "2-digit",
-                })
+                hour: "2-digit",
+                minute: "2-digit",
+              })
               : "-",
             dateOuvJour: dateOuv ? dateOuv.toISOString().split("T")[0] : "-",
             duree: formatDureeMinutes(dureeMinutes),
             dureeMinutes,
             dateFerm: dateFerm
               ? dateFerm.toLocaleTimeString("fr-FR", {
-                  hour: "2-digit",
-                  minute: "2-digit",
-                })
+                hour: "2-digit",
+                minute: "2-digit",
+              })
               : "En cours",
             dateFermJour: dateFerm ? dateFerm.toISOString().split("T")[0] : "",
             statut,
@@ -245,6 +249,38 @@ const OuverturePorte = () => {
 
     fetchOuvertures();
   }, [appliedFilters, getDateRangeParams]);
+
+  // Helper: find matching call for a door opening
+  const findAppelForPorte = (row) => {
+    const camion = (row.camion || '').trim();
+    const rowDate = row.dateOuvJour;
+
+    // 1. Match direct via source_table_2 = 'voyagetracking_port_ouvert'
+    const directMatch = appelsData.find(a => {
+      const aCamion = (a.camion_id || '').trim();
+      const aDate = (a.ts_detection || a.date_appel || '').split('T')[0];
+      return aCamion === camion && aDate === rowDate && a.session_id &&
+        a.source_table_2 === 'voyagetracking_port_ouvert';
+    });
+    if (directMatch) return directMatch;
+
+    // 2. Match par type_nc contenant 'porte'
+    const typeMatch = appelsData.find(a => {
+      const aCamion = (a.camion_id || '').trim();
+      const aDate = (a.ts_detection || a.date_appel || '').split('T')[0];
+      const typeNc = (a.type_nc || '');
+      return aCamion === camion && aDate === rowDate && a.session_id &&
+        (typeNc.includes('porte') || typeNc.includes('arret_et_porte'));
+    });
+    if (typeMatch) return typeMatch;
+
+    // 3. Fallback: any call for same camion+date
+    return appelsData.find(a => {
+      const aCamion = (a.camion_id || '').trim();
+      const aDate = (a.ts_detection || a.date_appel || '').split('T')[0];
+      return aCamion === camion && aDate === rowDate && a.session_id;
+    });
+  };
 
   const filteredData = useMemo(() => {
     const getWeekNumber = (dateValue) => {
@@ -565,6 +601,191 @@ const OuverturePorte = () => {
             </div>
           </div>
 
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden min-h-[500px]">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm text-left border-collapse">
+              <thead>
+                <tr className="bg-gray-50/50 border-b border-gray-100">
+                  <th className="px-6 py-2.5 font-bold text-gray-500 uppercase tracking-wider text-[11px]">
+                    Camion
+                  </th>
+                  <th className="px-6 py-2.5 font-bold text-gray-500 uppercase tracking-wider text-[11px]">
+                    Voyage planifié
+                  </th>
+                  <th className="px-6 py-2.5 font-bold text-gray-500 uppercase tracking-wider text-[11px]">
+                    Localisation
+                  </th>
+                  <th className="px-6 py-2.5 font-bold text-gray-500 uppercase tracking-wider text-[11px]">
+                    POI proche
+                  </th>
+                  <th className="px-6 py-2.5 font-bold text-gray-500 uppercase tracking-wider text-[11px]">
+                    Adresse POI
+                  </th>
+                  <th className="px-6 py-2.5 font-bold text-gray-500 uppercase tracking-wider text-[11px]">
+                    Distance
+                  </th>
+                  <th className="px-6 py-2.5 font-bold text-gray-500 uppercase tracking-wider text-[11px]">
+                    Ouverture
+                  </th>
+                  <th className="px-6 py-2.5 font-bold text-gray-500 uppercase tracking-wider text-[11px]">
+                    Date ouv.
+                  </th>
+                  <th className="px-6 py-2.5 font-bold text-gray-500 uppercase tracking-wider text-[11px]">
+                    Durée
+                  </th>
+                  <th className="px-6 py-2.5 font-bold text-gray-500 uppercase tracking-wider text-[11px]">
+                    Date ferm.
+                  </th>
+                  <th className="px-6 py-2.5 font-bold text-gray-500 uppercase tracking-wider text-[11px]">
+                    Statut
+                  </th>
+                  <th className="px-6 py-2.5 font-bold text-gray-500 uppercase tracking-wider text-[11px]">
+                    Appel
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {filteredData.map((row) => (
+                  <tr
+                    key={row.id}
+                    onClick={() => handleSelectOuverture(row)}
+                    className={`group cursor-pointer transition-all ${selectedOuvertureId === row.id ? "ring-2 ring-inset ring-orange-200" : ""}`}
+                    style={{
+                      backgroundColor:
+                        row.statut === "conforme" ? "#f0fdf4" : "#fef2f2",
+                    }}
+                  >
+                    <td className="px-6 py-2 whitespace-nowrap">
+                      <span className="font-semibold text-gray-900 text-sm">
+                        {row.camion}
+                      </span>
+                    </td>
+                    <td className="px-6 py-2 whitespace-nowrap">
+                      {row.voyagePlanifie ? (
+                        <span className="px-3 py-1 rounded-full text-xs font-bold bg-green-50 text-green-700 border border-green-200">
+                          Oui
+                        </span>
+                      ) : (
+                        <span className="px-3 py-1 rounded-full text-xs font-bold bg-red-50 text-red-700 border border-red-200">
+                          Non
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-6 py-2 whitespace-nowrap">
+                      <span className="inline-flex items-center gap-1.5 font-medium text-gray-600">
+                        <FiMapPin className="text-gray-400" />
+                        {row.localisation}
+                      </span>
+                    </td>
+                    <td className="px-6 py-2 whitespace-nowrap font-medium text-gray-600">
+                      {row.poiProche}
+                    </td>
+                    <td className="px-6 py-2 whitespace-nowrap font-medium text-gray-600">
+                      {row.poiAdresse}
+                    </td>
+                    <td className="px-6 py-2 whitespace-nowrap">
+                      <span className="px-3 py-1 bg-gray-100 rounded-full text-xs font-bold text-gray-700">
+                        {row.distancePoiMetres !== null &&
+                          row.distancePoiMetres !== undefined
+                          ? `${Number(row.distancePoiMetres).toFixed(2)} m`
+                          : "-"}
+                      </span>
+                    </td>
+                    <td className="px-6 py-2 whitespace-nowrap">
+                      <span className="px-3 py-1 bg-orange-50 border border-orange-200 rounded-full text-xs font-bold text-orange-700">
+                        {row.ouverture}
+                      </span>
+                    </td>
+                    <td className="px-6 py-2 whitespace-nowrap font-medium text-gray-600">
+                      <div className="font-semibold text-gray-900 text-sm">
+                        {row.dateOuv}
+                      </div>
+                      <div className="text-[11px] text-gray-400">
+                        {row.dateOuvJour}
+                      </div>
+                    </td>
+                    <td className="px-6 py-2 whitespace-nowrap">
+                      <span className="px-3 py-1 bg-gray-100 rounded-full text-xs font-bold text-gray-700">
+                        {row.duree}
+                      </span>
+                    </td>
+                    <td className="px-6 py-2 whitespace-nowrap font-medium text-gray-600">
+                      <div className="font-semibold text-gray-900 text-sm">
+                        {row.dateFerm}
+                      </div>
+                      {row.dateFermJour && (
+                        <div className="text-[11px] text-gray-400">
+                          {row.dateFermJour}
+                        </div>
+                      )}
+                    </td>
+                    <td className="px-6 py-2">
+                      {row.statut === "conforme" ? (
+                        <div className="flex items-center gap-2">
+                          <div className="w-2 h-2 rounded-full bg-green-500"></div>
+                          <span className="text-[10px] font-semibold uppercase tracking-tighter text-green-700 inline-flex items-center gap-1">
+                            <FiCheckCircle /> Conforme
+                          </span>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-2">
+                          <div className="w-2 h-2 rounded-full bg-red-500"></div>
+                          <span className="text-[10px] font-semibold uppercase tracking-tighter text-red-700 inline-flex items-center gap-1">
+                            <FiXCircle /> Non conforme
+                          </span>
+                        </div>
+                      )}
+                    </td>
+                    <td className="px-6 py-2 whitespace-nowrap">
+                      {(() => {
+                        const appel = findAppelForPorte(row);
+                        if (appel && appel.session_id) {
+                          return (
+                            <Link
+                              href={`/appels/${appel.session_id}`}
+                              onClick={(e) => e.stopPropagation()}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-green-50 text-green-700 border border-green-200 hover:bg-green-100 transition-all"
+                            >
+                              <FiPhone /> Appel lancé
+                            </Link>
+                          );
+                        }
+                        return (
+                          <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-gray-50 text-gray-400 border border-gray-200">
+                            <FiPhoneOff /> Pas d'appel
+                          </span>
+                        );
+                      })()}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {filteredData.length === 0 && !loading && (
+            <div className="flex flex-col items-center justify-center py-20 bg-gray-50/30 text-center">
+              <div className="w-[80px] h-[80px] rounded-2xl bg-orange-50 flex items-center justify-center mb-4">
+                <EmptyDoorIcon />
+              </div>
+              <h3 className="text-2xl leading-none text-gray-900 font-black tracking-tight mb-2">
+                Aucun événement trouvé
+              </h3>
+              <p className="text-base leading-relaxed text-gray-500 font-medium max-w-lg px-6">
+                Aucune donnée ne correspond à la date sélectionnée.
+                <br />
+                Modifiez les filtres ou choisissez une autre date.
+              </p>
+            </div>
+          )}
+
+          {loading && (
+            <div className="flex justify-center py-20">
+              <div className="w-8 h-8 border-4 border-orange-500 border-t-transparent rounded-full animate-spin"></div>
+            </div>
+          )}
+          </div>
+
           {filteredData.length > 0 && (
             <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm mb-8">
               <h3 className="text-[11px] font-bold text-gray-400 uppercase tracking-[0.1em] mb-6">
@@ -645,165 +866,6 @@ const OuverturePorte = () => {
             </div>
           )}
 
-          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden min-h-[500px]">
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm text-left border-collapse">
-                <thead>
-                  <tr className="bg-gray-50/50 border-b border-gray-100">
-                    <th className="px-6 py-2.5 font-bold text-gray-500 uppercase tracking-wider text-[11px]">
-                      Camion
-                    </th>
-                    <th className="px-6 py-2.5 font-bold text-gray-500 uppercase tracking-wider text-[11px]">
-                      Voyage planifié
-                    </th>
-                    <th className="px-6 py-2.5 font-bold text-gray-500 uppercase tracking-wider text-[11px]">
-                      Localisation
-                    </th>
-                    <th className="px-6 py-2.5 font-bold text-gray-500 uppercase tracking-wider text-[11px]">
-                      POI proche
-                    </th>
-                    <th className="px-6 py-2.5 font-bold text-gray-500 uppercase tracking-wider text-[11px]">
-                      Adresse POI
-                    </th>
-                    <th className="px-6 py-2.5 font-bold text-gray-500 uppercase tracking-wider text-[11px]">
-                      Distance
-                    </th>
-                    <th className="px-6 py-2.5 font-bold text-gray-500 uppercase tracking-wider text-[11px]">
-                      Ouverture
-                    </th>
-                    <th className="px-6 py-2.5 font-bold text-gray-500 uppercase tracking-wider text-[11px]">
-                      Date ouv.
-                    </th>
-                    <th className="px-6 py-2.5 font-bold text-gray-500 uppercase tracking-wider text-[11px]">
-                      Durée
-                    </th>
-                    <th className="px-6 py-2.5 font-bold text-gray-500 uppercase tracking-wider text-[11px]">
-                      Date ferm.
-                    </th>
-                    <th className="px-6 py-2.5 font-bold text-gray-500 uppercase tracking-wider text-[11px]">
-                      Statut
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-50">
-                  {filteredData.map((row) => (
-                    <tr
-                      key={row.id}
-                      onClick={() => handleSelectOuverture(row)}
-                      className={`group cursor-pointer transition-all ${selectedOuvertureId === row.id ? "ring-2 ring-inset ring-orange-200" : ""}`}
-                      style={{
-                        backgroundColor:
-                          row.statut === "conforme" ? "#f0fdf4" : "#fef2f2",
-                      }}
-                    >
-                      <td className="px-6 py-2 whitespace-nowrap">
-                        <span className="font-semibold text-gray-900 text-sm">
-                          {row.camion}
-                        </span>
-                      </td>
-                      <td className="px-6 py-2 whitespace-nowrap">
-                        {row.voyagePlanifie ? (
-                          <span className="px-3 py-1 rounded-full text-xs font-bold bg-green-50 text-green-700 border border-green-200">
-                            Oui
-                          </span>
-                        ) : (
-                          <span className="px-3 py-1 rounded-full text-xs font-bold bg-red-50 text-red-700 border border-red-200">
-                            Non
-                          </span>
-                        )}
-                      </td>
-                      <td className="px-6 py-2 whitespace-nowrap">
-                        <span className="inline-flex items-center gap-1.5 font-medium text-gray-600">
-                          <FiMapPin className="text-gray-400" />
-                          {row.localisation}
-                        </span>
-                      </td>
-                      <td className="px-6 py-2 whitespace-nowrap font-medium text-gray-600">
-                        {row.poiProche}
-                      </td>
-                      <td className="px-6 py-2 whitespace-nowrap font-medium text-gray-600">
-                        {row.poiAdresse}
-                      </td>
-                      <td className="px-6 py-2 whitespace-nowrap">
-                        <span className="px-3 py-1 bg-gray-100 rounded-full text-xs font-bold text-gray-700">
-                          {row.distancePoiMetres !== null &&
-                          row.distancePoiMetres !== undefined
-                            ? `${Number(row.distancePoiMetres).toFixed(2)} m`
-                            : "-"}
-                        </span>
-                      </td>
-                      <td className="px-6 py-2 whitespace-nowrap">
-                        <span className="px-3 py-1 bg-orange-50 border border-orange-200 rounded-full text-xs font-bold text-orange-700">
-                          {row.ouverture}
-                        </span>
-                      </td>
-                      <td className="px-6 py-2 whitespace-nowrap font-medium text-gray-600">
-                        <div className="font-semibold text-gray-900 text-sm">
-                          {row.dateOuv}
-                        </div>
-                        <div className="text-[11px] text-gray-400">
-                          {row.dateOuvJour}
-                        </div>
-                      </td>
-                      <td className="px-6 py-2 whitespace-nowrap">
-                        <span className="px-3 py-1 bg-gray-100 rounded-full text-xs font-bold text-gray-700">
-                          {row.duree}
-                        </span>
-                      </td>
-                      <td className="px-6 py-2 whitespace-nowrap font-medium text-gray-600">
-                        <div className="font-semibold text-gray-900 text-sm">
-                          {row.dateFerm}
-                        </div>
-                        {row.dateFermJour && (
-                          <div className="text-[11px] text-gray-400">
-                            {row.dateFermJour}
-                          </div>
-                        )}
-                      </td>
-                      <td className="px-6 py-2">
-                        {row.statut === "conforme" ? (
-                          <div className="flex items-center gap-2">
-                            <div className="w-2 h-2 rounded-full bg-green-500"></div>
-                            <span className="text-[10px] font-semibold uppercase tracking-tighter text-green-700 inline-flex items-center gap-1">
-                              <FiCheckCircle /> Conforme
-                            </span>
-                          </div>
-                        ) : (
-                          <div className="flex items-center gap-2">
-                            <div className="w-2 h-2 rounded-full bg-red-500"></div>
-                            <span className="text-[10px] font-semibold uppercase tracking-tighter text-red-700 inline-flex items-center gap-1">
-                              <FiXCircle /> Non conforme
-                            </span>
-                          </div>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            {filteredData.length === 0 && !loading && (
-              <div className="flex flex-col items-center justify-center py-20 bg-gray-50/30 text-center">
-                <div className="w-[80px] h-[80px] rounded-2xl bg-orange-50 flex items-center justify-center mb-4">
-                  <EmptyDoorIcon />
-                </div>
-                <h3 className="text-2xl leading-none text-gray-900 font-black tracking-tight mb-2">
-                  Aucun événement trouvé
-                </h3>
-                <p className="text-base leading-relaxed text-gray-500 font-medium max-w-lg px-6">
-                  Aucune donnée ne correspond à la date sélectionnée.
-                  <br />
-                  Modifiez les filtres ou choisissez une autre date.
-                </p>
-              </div>
-            )}
-            {loading && (
-              <div className="flex justify-center py-20">
-                <div className="w-8 h-8 border-4 border-orange-500 border-t-transparent rounded-full animate-spin"></div>
-              </div>
-            )}
-          </div>
         </div>
       </section>
 

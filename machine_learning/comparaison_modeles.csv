@@ -1,0 +1,7 @@
+﻿Modèle;MAE moy (L/100km);MAE std;R² moyen
+Gradient Boosting;1.659;0.285;0.735
+Ridge Regression;1.75;0.2;0.753
+XGBoost;1.755;0.142;0.712
+Random Forest;1.884;0.164;0.683
+SVR;2.878;0.778;-0.114
+KNN Regressor;3.276;0.757;-0.133

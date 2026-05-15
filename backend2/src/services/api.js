@@ -1,5 +1,5 @@
 // Service API centralisé pour toutes les requêtes
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
+const API_URL = "";
 
 // Prevent duplicate in-flight GET requests for the same endpoint.
 const inFlightGetRequests = new Map();
@@ -94,6 +94,14 @@ export const camionsAPI = {
     fetchWithAuth(`/api/camions/gantt${buildQueryString({ date })}`),
   getTempsReel: (params = {}) =>
     fetchWithAuth(`/api/camions/realtime${buildQueryString(params)}`),
+};
+
+// Appels API
+export const appelsAPI = {
+    lancerAppel: (data) => fetchWithAuth('/api/appels/lancer', {
+        method: 'POST',
+        body: JSON.stringify(data),
+    }),
 };
 
 // Ouvertures API
@@ -198,14 +206,4 @@ export const userAPI = {
     }),
 };
 
-export default {
-  authAPI,
-  camionsAPI,
-  ouverturesAPI,
-  poiAPI,
-  arretsAPI,
-  carburantAPI,
-  reclamationsAPI,
-  groupsAPI,
-  userAPI,
-};
+export default { authAPI, camionsAPI, appelsAPI, ouverturesAPI, poiAPI, arretsAPI, carburantAPI, groupsAPI, userAPI };

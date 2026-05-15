@@ -11,6 +11,7 @@ import {
   FiFileText,
   FiMessageSquare,
   FiHash,
+  FiUser,
 } from "react-icons/fi";
 
 /* ─── Statut Badge ─── */
@@ -166,11 +167,21 @@ export default function ReclamationsPage() {
                   {[
                     { label: "Matricule", field: "matricule", icon: FiTruck },
                     {
+                      label: "Chauffeur",
+                      field: "chauffeur",
+                      icon: FiUser,
+                    },
+                    {
                       label: "Date Transaction",
                       field: "dateTransaction",
                       icon: FiCalendar,
                     },
                     { label: "N° Ticket", field: "numTicket", icon: FiHash },
+                    {
+                      label: "Soumis par",
+                      field: "soumisPar",
+                      icon: FiUser,
+                    },
                     {
                       label: "Soumis le",
                       field: "createdAt",
@@ -202,6 +213,9 @@ export default function ReclamationsPage() {
                         {rec.matricule}
                       </span>
                     </td>
+                    <td className="px-6 py-2.5 whitespace-nowrap text-[13px] text-gray-700">
+                      {rec.chauffeur || "—"}
+                    </td>
                     <td className="px-6 py-2.5 whitespace-nowrap font-medium text-gray-600">
                       {rec.dateTransaction
                         ? new Date(rec.dateTransaction).toLocaleDateString(
@@ -216,6 +230,9 @@ export default function ReclamationsPage() {
                     </td>
                     <td className="px-6 py-2.5 whitespace-nowrap text-[13px] text-gray-600 font-mono">
                       {rec.numTicket}
+                    </td>
+                    <td className="px-6 py-2.5 whitespace-nowrap text-[13px] text-gray-700 font-semibold">
+                      {rec.soumisPar || "—"}
                     </td>
                     <td className="px-6 py-2.5 whitespace-nowrap text-[12px] text-gray-400">
                       {rec.createdAt

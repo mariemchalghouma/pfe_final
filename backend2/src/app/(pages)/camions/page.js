@@ -185,6 +185,25 @@ const fmtDurationFromISO = (start, end) => {
   return fmtDuration(ms / 60000);
 };
 
+const computeIsEnCours = (voyage, ganttDate) => {
+  if (!voyage?.heureDep || !voyage?.heureFin) return false;
+
+  const todayIso = new Date().toISOString().split("T")[0];
+  if (ganttDate && ganttDate !== todayIso) return false;
+
+  const now = new Date();
+  const [hDep, mDep] = String(voyage.heureDep).split(":").map(Number);
+  const [hFin, mFin] = String(voyage.heureFin).split(":").map(Number);
+
+  if (!Number.isFinite(hDep) || !Number.isFinite(mDep)) return false;
+  if (!Number.isFinite(hFin) || !Number.isFinite(mFin)) return false;
+
+  const nowMins = now.getHours() * 60 + now.getMinutes();
+  const depMins = hDep * 60 + mDep;
+  const finMins = hFin * 60 + mFin;
+  return nowMins >= depMins && nowMins < finMins;
+};
+
 const normalizeSite = (value) => (value || "").toString().trim().toUpperCase();
 
 const toNumber = (value) => {
@@ -192,8 +211,15 @@ const toNumber = (value) => {
   return Number.isFinite(n) ? n : null;
 };
 
-const buildVoyageMapPoints = (voyageData, trajetPoints = []) => {
+const buildVoyageMapPoints = (voyageData, trajetPoints = [], ganttDate) => {
   const points = [];
+  const isEnCours = computeIsEnCours(voyageData, ganttDate);
+
+  const plannedPois = Array.isArray(voyageData?.plannedPois)
+    ? voyageData.plannedPois
+    : Array.isArray(voyageData?.clients)
+      ? voyageData.clients
+      : [];
 
   // trajetPoints can be [[lat,lng], ...] arrays or {latitude, longitude} objects
   const getLat = (pt) =>
@@ -201,10 +227,9 @@ const buildVoyageMapPoints = (voyageData, trajetPoints = []) => {
   const getLng = (pt) =>
     Array.isArray(pt) ? toNumber(pt[1]) : toNumber(pt.longitude ?? pt.lng);
 
+  // ── 1. GPS Start point ──
   if (trajetPoints.length > 0) {
     const first = trajetPoints[0];
-    const last = trajetPoints[trajetPoints.length - 1];
-
     const lat1 = getLat(first);
     const lng1 = getLng(first);
     if (lat1 != null && lng1 != null) {
@@ -212,42 +237,130 @@ const buildVoyageMapPoints = (voyageData, trajetPoints = []) => {
         id: "gps-depart",
         lat: lat1,
         lng: lng1,
-        label: "Départ camion",
-        info: "Départ",
+        label: "🚩 Point de départ",
+        info: `Départ du trajet${voyageData?.heureDep ? ` à ${voyageData.heureDep}` : ""}`,
         color: "#22c55e",
+        markerType: "start",
       });
-    }
-
-    if (trajetPoints.length > 1) {
-      const lat2 = getLat(last);
-      const lng2 = getLng(last);
-      if (lat2 != null && lng2 != null) {
-        points.push({
-          id: "gps-arrivee",
-          lat: lat2,
-          lng: lng2,
-          label: "Arrivée camion",
-          info: "Arrivée",
-          color: "#ef4444",
-        });
-      }
     }
   }
 
+  // ── 2. Current truck position (with speed + km) ──
+  const currentPos = voyageData?.currentPosition;
+  if (currentPos?.lat != null && currentPos?.lng != null) {
+    const speed = currentPos.speed ?? 0;
+    points.push({
+      id: "gps-current",
+      lat: currentPos.lat,
+      lng: currentPos.lng,
+      label: "🚛 Position actuelle",
+      info: `Vitesse: ${Math.round(speed)} km/h`,
+      color: "#3b82f6",
+      markerType: "truck",
+      speed: Math.round(speed),
+    });
+  } else if (trajetPoints.length > 1) {
+    // Fallback to last GPS point
+    const last = trajetPoints[trajetPoints.length - 1];
+    const lat2 = getLat(last);
+    const lng2 = getLng(last);
+    if (lat2 != null && lng2 != null) {
+      points.push({
+        id: "gps-current",
+        lat: lat2,
+        lng: lng2,
+        label: isEnCours ? "🚛 Position actuelle" : "📍 Dernier point GPS",
+        info: isEnCours ? "En temps réel" : "Fin du trajet",
+        color: "#3b82f6",
+        markerType: isEnCours ? "truck" : "end",
+      });
+    }
+  }
+
+  // ── 3. Planned POIs — visited (✓) vs pending (numéro) ──
+  const nextPoi = voyageData?.nextPoi;
+
+  plannedPois.forEach((pp, idx) => {
+    const lat = toNumber(pp?.poi?.lat);
+    const lng = toNumber(pp?.poi?.lng);
+    if (lat == null || lng == null) return;
+
+    const visited = !!pp.visited;
+    const poiName = pp.poiName || pp.poi?.nom || pp.code || "POI";
+    const ordre = pp.ordre || idx + 1;
+    const isNext = nextPoi?.code && normalizeSite(nextPoi.code) === normalizeSite(pp.code);
+
+    let label, info, color, markerType;
+
+    if (visited) {
+      // ── POI visité ✓ ──
+      label = `✓ POI ${ordre} — ${poiName}`;
+      const infoParts = [];
+      if (pp.client) infoParts.push(pp.client);
+      if (pp.arrivalTime) infoParts.push(`Arrivée: ${fmtTime(pp.arrivalTime)}`);
+      if (pp.arrivalAddress) infoParts.push(`Lieu: ${pp.arrivalAddress}`);
+      info = infoParts.join(" · ") || "Visité";
+      color = "#22c55e";
+      markerType = "poi_visited";
+    } else if (isNext) {
+      // ── Prochaine destination ──
+      label = `🎯 Prochain: POI ${ordre} — ${poiName}`;
+      const infoParts = [];
+      if (pp.client) infoParts.push(pp.client);
+      if (nextPoi.distanceKm != null) infoParts.push(`Distance: ${nextPoi.distanceKm} km`);
+      if (nextPoi.etaFormatted) infoParts.push(`ETA: ${nextPoi.etaFormatted}`);
+      info = infoParts.join(" · ") || "Prochaine destination";
+      color = "#f59e0b";
+      markerType = "poi_next";
+    } else {
+      // ── POI planifié (à venir) ──
+      label = `POI ${ordre} — ${poiName}`;
+      const infoParts = [];
+      if (pp.client) infoParts.push(pp.client);
+      infoParts.push("À visiter");
+      info = infoParts.join(" · ");
+      color = "#8b5cf6";
+      markerType = "poi_planned";
+    }
+
+    points.push({
+      id: `poi-${pp.code || "x"}-${ordre}`,
+      lat,
+      lng,
+      label,
+      info,
+      visited,
+      isNext,
+      ordre,
+      status: visited ? "conforme" : isNext ? "arrete" : undefined,
+      color,
+      markerType,
+    });
+  });
+
+  // ── 4. Event segments (non-driving: stops, ravitaillements, ouvertures) ──
   (voyageData?.segments || []).forEach((seg, idx) => {
-    if (seg.type === "driving") return; // Ne pas afficher la conduite comme un point unique
+    if (seg.type === "driving" || seg.type === "planned_driving") return;
     const lat = toNumber(seg.lat);
     const lng = toNumber(seg.lng);
     if (lat == null || lng == null) return;
     const segColor = segmentColors[seg.type] || segmentColors.inactive;
+
+    // Skip if this segment's position overlaps with a planned POI
+    const overlapsPoiPoint = points.some(
+      (p) => p.markerType?.startsWith("poi_") &&
+        Math.abs(p.lat - lat) < 0.0005 && Math.abs(p.lng - lng) < 0.0005
+    );
+    if (overlapsPoiPoint) return;
 
     points.push({
       id: `evt-${idx}`,
       lat,
       lng,
       label: segColor.label,
-      info: `${fmtTime(seg.start)} -> ${fmtTime(seg.end)}${seg.poiName ? ` | ${seg.poiName}` : ""}`,
+      info: `${fmtTime(seg.start)} → ${fmtTime(seg.end)}${seg.poiName ? ` | ${seg.poiName}` : ""}`,
       color: segColor.bg,
+      markerType: "event",
     });
   });
 
@@ -397,40 +510,40 @@ const SegmentPopover = ({ segment, position, onClose }) => {
             segment.type === "stop_non_conforme" ||
             segment.type === "stop" ||
             segment.type === "stop_long") && (
-            <div className="flex items-center gap-1.5">
-              <FaDoorOpen
-                style={{ color: "#7c3aed", flexShrink: 0, fontSize: "13px" }}
-              />
-              <span style={{ color: "#6b7280" }}>Porte :</span>
-              {segment.porteOuverte ? (
-                <span
-                  style={{
-                    fontWeight: 700,
-                    color: "#ef4444",
-                    background: "#fef2f2",
-                    padding: "1px 6px",
-                    borderRadius: "4px",
-                    fontSize: "11px",
-                  }}
-                >
-                  Ouverte
-                </span>
-              ) : (
-                <span
-                  style={{
-                    fontWeight: 700,
-                    color: "#22c55e",
-                    background: "#dcfce7",
-                    padding: "1px 6px",
-                    borderRadius: "4px",
-                    fontSize: "11px",
-                  }}
-                >
-                  Fermée
-                </span>
-              )}
-            </div>
-          )}
+              <div className="flex items-center gap-1.5">
+                <FaDoorOpen
+                  style={{ color: "#7c3aed", flexShrink: 0, fontSize: "13px" }}
+                />
+                <span style={{ color: "#6b7280" }}>Porte :</span>
+                {segment.porteOuverte ? (
+                  <span
+                    style={{
+                      fontWeight: 700,
+                      color: "#ef4444",
+                      background: "#fef2f2",
+                      padding: "1px 6px",
+                      borderRadius: "4px",
+                      fontSize: "11px",
+                    }}
+                  >
+                    Ouverte
+                  </span>
+                ) : (
+                  <span
+                    style={{
+                      fontWeight: 700,
+                      color: "#22c55e",
+                      background: "#dcfce7",
+                      padding: "1px 6px",
+                      borderRadius: "4px",
+                      fontSize: "11px",
+                    }}
+                  >
+                    Fermée
+                  </span>
+                )}
+              </div>
+            )}
           {segment.conforme != null && segment.type !== "driving" && (
             <div
               className="flex items-center gap-1.5"
@@ -638,8 +751,8 @@ const GanttBar = ({
                     width: "16px",
                     height: "16px",
                     borderRadius: "5px",
-                    background: "#f3e8ff",
-                    color: "#7c3aed",
+                    background: c.visited ? "#dcfce7" : "#f3e8ff",
+                    color: c.visited ? "#16a34a" : "#7c3aed",
                     fontSize: "8px",
                     fontWeight: 700,
                     display: "flex",
@@ -648,18 +761,23 @@ const GanttBar = ({
                     flexShrink: 0,
                   }}
                 >
-                  {c.ordre || ci + 1}
+                  {c.visited ? "✓" : (c.ordre || ci + 1)}
                 </span>
                 <span
                   style={{
                     fontSize: "10px",
                     fontWeight: 600,
-                    color: "#374151",
+                    color: c.visited ? "#166534" : "#374151",
                   }}
                   className="truncate"
-                  title={c.client}
+                  title={`${c.client || "—"}${c.poiName ? ` (${c.poiName})` : ""}`}
                 >
                   {c.client || "—"}
+                  {c.poiName && (
+                    <span style={{ color: "#9ca3af", marginLeft: "4px", fontWeight: 500 }}>
+                      ({c.poiName})
+                    </span>
+                  )}
                 </span>
               </div>
             ))}
@@ -746,7 +864,18 @@ const GanttBar = ({
 };
 
 /* ═══ SIDE PANEL ═══ */
-const SidePanel = ({ data, onClose, onShowMap }) => {
+const SidePanel = ({ data, onClose, onShowMap, ganttDate }) => {
+  const [currentAddress, setCurrentAddress] = useState("Recherche en cours...");
+
+  useEffect(() => {
+    if (data?.currentPosition?.lat && data?.currentPosition?.lng) {
+      setCurrentAddress("Recherche en cours...");
+      reverseGeocode(data.currentPosition.lat, data.currentPosition.lng)
+        .then((res) => setCurrentAddress(res || "Position inconnue"))
+        .catch(() => setCurrentAddress("Position inconnue"));
+    }
+  }, [data?.currentPosition]);
+
   if (!data) return null;
 
   const segments = data.segments || [];
@@ -764,6 +893,9 @@ const SidePanel = ({ data, onClose, onShowMap }) => {
   const stopTypes = ["stop_conforme", "stop_non_conforme", "stop", "stop_long"];
   const nbStops = segments.filter((s) => stopTypes.includes(s.type)).length;
   const hasVoyage = data.voycle != null && String(data.voycle).trim() !== "";
+
+  const isEnCours = computeIsEnCours(data, ganttDate);
+
   const chauffeurPhone =
     data.telephone && data.telephone !== "—" ? data.telephone : null;
   const primaryClient =
@@ -784,6 +916,7 @@ const SidePanel = ({ data, onClose, onShowMap }) => {
         boxShadow: "-8px 0 40px rgba(15, 23, 42, 0.14)",
         display: "flex",
         flexDirection: "column",
+        overflowY: "auto",
         fontFamily: "'Inter', sans-serif",
         animation: "slideIn 0.25s ease-out",
       }}
@@ -823,23 +956,53 @@ const SidePanel = ({ data, onClose, onShowMap }) => {
               >
                 {data.camion}
               </p>
-              {hasVoyage && (
-                <p
-                  style={{
-                    display: "inline-flex",
-                    marginTop: "10px",
-                    padding: "5px 12px",
-                    borderRadius: "999px",
-                    background: "rgba(255,255,255,0.24)",
-                    color: "white",
-                    fontSize: "15px",
-                    fontWeight: 700,
-                    lineHeight: 1,
-                  }}
-                >
-                  V{data.voycle}
-                </p>
-              )}
+              <div className="flex items-center gap-2 mt-2">
+                {hasVoyage && (
+                  <span
+                    style={{
+                      display: "inline-flex",
+                      padding: "5px 12px",
+                      borderRadius: "999px",
+                      background: "rgba(255,255,255,0.24)",
+                      color: "white",
+                      fontSize: "15px",
+                      fontWeight: 700,
+                      lineHeight: 1,
+                    }}
+                  >
+                    V{data.voycle}
+                  </span>
+                )}
+                {isEnCours && (
+                  <span
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "6px",
+                      padding: "5px 12px",
+                      borderRadius: "999px",
+                      background: "rgba(255,255,255,0.35)",
+                      color: "white",
+                      fontSize: "13px",
+                      fontWeight: 800,
+                      lineHeight: 1,
+                      letterSpacing: "0.5px",
+                    }}
+                  >
+                    <span
+                      style={{
+                        width: "8px",
+                        height: "8px",
+                        borderRadius: "50%",
+                        background: "white",
+                        display: "inline-block",
+                        boxShadow: "0 0 8px rgba(255,255,255,0.8)",
+                      }}
+                    />
+                    EN COURS
+                  </span>
+                )}
+              </div>
             </div>
           </div>
 
@@ -1042,23 +1205,218 @@ const SidePanel = ({ data, onClose, onShowMap }) => {
           </div>
         </div>
 
+        {data.clients && data.clients.length > 0 ? (
+          <div
+            style={{
+              marginTop: "10px",
+              border: "1px solid #fdba74",
+              borderRadius: "12px",
+              padding: "10px 12px",
+              display: "flex",
+              alignItems: "center",
+              gap: "10px",
+              color: "#ea580c",
+              background: "#fff7ed",
+              fontWeight: 900,
+              fontSize: "18px",
+            }}
+          >
+            <FaWarehouse style={{ fontSize: "18px", flexShrink: 0 }} />
+            <span className="truncate" style={{ letterSpacing: "-0.5px" }}>
+              {data.clients[0].client || "Site inconnu"}
+            </span>
+          </div>
+        ) : (
+          <div
+            style={{
+              marginTop: "10px",
+              border: "1px solid #fdba74",
+              borderRadius: "12px",
+              padding: "10px 12px",
+              display: "flex",
+              alignItems: "center",
+              gap: "8px",
+              color: "#ea580c",
+              fontWeight: 700,
+              background: "#fff7ed",
+              fontSize: "17px",
+            }}
+          >
+            <FaWarehouse style={{ fontSize: "15px", flexShrink: 0 }} />
+            <span className="truncate">Destination non renseignée</span>
+          </div>
+        )}
+
         <div
           style={{
             marginTop: "10px",
-            border: "1px solid #fdba74",
+            background: "#f0fdf4",
+            border: "1px solid #bbf7d0",
             borderRadius: "12px",
-            padding: "10px 12px",
-            display: "flex",
-            alignItems: "center",
-            gap: "8px",
-            color: "#ea580c",
-            fontWeight: 700,
-            background: "#fff7ed",
-            fontSize: "17px",
+            padding: "12px",
           }}
         >
-          <FaWarehouse style={{ fontSize: "15px", flexShrink: 0 }} />
-          <span className="truncate">{primaryClient}</span>
+          <div className="flex items-center justify-between gap-2 mb-3">
+            <div className="flex items-center gap-2">
+              <div
+                style={{
+                  width: "10px",
+                  height: "10px",
+                  borderRadius: "50%",
+                  background: "#22c55e",
+                  boxShadow: "0 0 0 3px #dcfce7",
+                }}
+              />
+              <span
+                style={{
+                  color: "#16a34a",
+                  fontWeight: 800,
+                  fontSize: "12px",
+                  letterSpacing: "0.5px",
+                  textTransform: "uppercase",
+                }}
+              >
+                Suivi du trajet
+              </span>
+            </div>
+            {data.poiProgress && (
+              <span style={{ fontSize: "12px", fontWeight: 700, color: "#166534" }}>
+                {data.poiProgress.visited}/{data.poiProgress.total} POI
+              </span>
+            )}
+          </div>
+
+          <div className="space-y-2 text-[13px]">
+            <div className="flex items-start gap-2">
+              <FiMapPin style={{ color: "#64748b", marginTop: "2px", flexShrink: 0 }} />
+              <div>
+                <span style={{ color: "#64748b", marginRight: "4px" }}>Position:</span>
+                <span style={{ fontWeight: 600, color: "#0f172a" }}>
+                  {data.currentPosition ? currentAddress : "En attente de signal GPS..."}
+                </span>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <FiActivity style={{ color: "#64748b", flexShrink: 0 }} />
+              <span style={{ color: "#64748b", marginRight: "4px" }}>Vitesse:</span>
+              <span style={{ fontWeight: 600, color: "#0f172a" }}>
+                {data.currentPosition ? Math.round(data.currentPosition.speed || 0) : 0} km/h
+              </span>
+            </div>
+
+            {data.nextPoi && (
+              <div className="flex items-start gap-2">
+                <FiChevronRight style={{ color: "#16a34a", marginTop: "2px", flexShrink: 0 }} />
+                <div>
+                  <span style={{ color: "#64748b", marginRight: "4px" }}>Destination:</span>
+                  <span style={{ fontWeight: 700, color: "#16a34a" }}>
+                    {data.nextPoi.nom || data.nextPoi.code}
+                  </span>
+                  {data.nextPoi.etaFormatted && (
+                    <span style={{ color: "#16a34a", marginLeft: "6px", fontSize: "11px", fontWeight: 600, background: "#dcfce7", padding: "1px 6px", borderRadius: "4px", display: "inline-block", marginTop: "2px" }}>
+                      ETA {data.nextPoi.etaFormatted}
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
+
+            <div className="mt-2 space-y-1">
+              {(data.clients || []).filter((c) => c.visited).length > 0 ? (
+                (data.clients || []).filter((c) => c.visited).map((c, idx) => (
+                  <div key={`visited-${idx}`} style={{ fontSize: "11px", color: "#166534", fontWeight: 600 }}>
+                    ✓ {c.code || c.poiName || c.client || "POI"}
+                    {c.arrivalTime ? ` · ${fmtTime(c.arrivalTime)}` : ""}
+                    {c.arrivalAddress ? ` · ${c.arrivalAddress}` : ""}
+                  </div>
+                ))
+              ) : (
+                <div style={{ fontSize: "11px", color: "#64748b", fontWeight: 500 }}>
+                  Aucun POI validé pour ce trajet.
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Appels block */}
+        <div
+          style={{
+            marginTop: "10px",
+            border: "1px solid #e2e8f0",
+            borderRadius: "12px",
+            padding: "12px",
+            background: "#f8fafc",
+          }}
+        >
+          <div className="flex items-center gap-2 mb-3">
+            <FiPhone style={{ color: "#3b82f6", fontSize: "14px" }} />
+            <span
+              style={{
+                color: "#1e3a8a",
+                fontWeight: 800,
+                fontSize: "12px",
+                letterSpacing: "0.5px",
+                textTransform: "uppercase",
+              }}
+            >
+              Appels Téléphoniques
+            </span>
+          </div>
+
+          {!data.appels || data.appels.length === 0 ? (
+            <p style={{ fontSize: "13px", color: "#64748b", fontWeight: 500, fontStyle: "italic" }}>
+              Aucun appel lié à ce trajet.
+            </p>
+          ) : (
+            <div className="space-y-2">
+              {data.appels.map((appel, idx) => {
+                const isSortant = appel.direction === "sortant";
+                return (
+                  <div
+                    key={idx}
+                    className="flex items-start gap-2"
+                    style={{
+                      background: "white",
+                      padding: "8px 10px",
+                      borderRadius: "8px",
+                      border: "1px solid #e2e8f0",
+                    }}
+                  >
+                    <div
+                      style={{
+                        padding: "4px",
+                        background: isSortant ? "#eff6ff" : "#f0fdf4",
+                        borderRadius: "50%",
+                        color: isSortant ? "#3b82f6" : "#22c55e",
+                        marginTop: "2px",
+                      }}
+                    >
+                      {isSortant ? (
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><line x1="7" y1="17" x2="17" y2="7"></line><polyline points="7 7 17 7 17 17"></polyline></svg>
+                      ) : (
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><line x1="17" y1="7" x2="7" y2="17"></line><polyline points="17 17 7 17 7 7"></polyline></svg>
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p style={{ fontSize: "13px", fontWeight: 700, color: "#1e293b", display: "flex", justifyContent: "space-between" }}>
+                        <span>Appel {isSortant ? "sortant" : "entrant"}</span>
+                        <span style={{ fontSize: "11px", color: "#94a3b8", fontWeight: 600 }}>
+                          {new Date(appel.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                      </p>
+                      {isSortant && appel.type !== "Inconnu" && (
+                        <p style={{ fontSize: "12px", color: "#64748b", fontWeight: 500, marginTop: "2px" }}>
+                          Motif: <span style={{ color: "#3b82f6", fontWeight: 600 }}>{appel.type}</span>
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
 
         <button
@@ -1089,8 +1447,6 @@ const SidePanel = ({ data, onClose, onShowMap }) => {
       {/* Timeline */}
       <div
         style={{
-          flex: 1,
-          overflowY: "auto",
           padding: "12px 20px 20px",
           background: "white",
         }}
@@ -1107,6 +1463,7 @@ const SidePanel = ({ data, onClose, onShowMap }) => {
         >
           Detail du trajet
         </p>
+
         <div className="space-y-0">
           {segments.map((seg, i) => {
             const segColor = segmentColors[seg.type] || segmentColors.inactive;
@@ -1286,9 +1643,9 @@ const Camions = () => {
                   markers: prev.markers.map((m) =>
                     m.id === camion.plaque
                       ? {
-                          ...m,
-                          info: `📍 ${address} · ${camion.vitesse ?? 0} km/h`,
-                        }
+                        ...m,
+                        info: `📍 ${address} · ${camion.vitesse ?? 0} km/h`,
+                      }
                       : m,
                   ),
                 };
@@ -1473,7 +1830,7 @@ const Camions = () => {
         }
       }
 
-      setSelectedRoutePoints(buildVoyageMapPoints(voyageData, trajetPoints));
+      setSelectedRoutePoints(buildVoyageMapPoints(voyageData, trajetPoints, ganttDate));
 
       // Extract lat/lng for the Polyline (trajetPoints = [[lat,lng], ...])
       const path = trajetPoints
@@ -1481,9 +1838,9 @@ const Camions = () => {
           Array.isArray(pt)
             ? [toNumber(pt[0]), toNumber(pt[1])]
             : [
-                toNumber(pt.latitude ?? pt.lat),
-                toNumber(pt.longitude ?? pt.lng),
-              ],
+              toNumber(pt.latitude ?? pt.lat),
+              toNumber(pt.longitude ?? pt.lng),
+            ],
         )
         .filter((coord) => coord[0] != null && coord[1] != null);
       setSelectedRoutePath(path);
@@ -1647,7 +2004,7 @@ const Camions = () => {
                   border: "1px solid #bfdbfe",
                 }}
               >
-                {ganttStats.totalVoyages} camion
+                {ganttStats.totalVoyages} Voyage
                 {ganttStats.totalVoyages > 1 ? "s" : ""}
               </span>
               <span
@@ -1840,6 +2197,7 @@ const Camions = () => {
           />
           <SidePanel
             data={selectedVoyage}
+            ganttDate={ganttDate}
             onClose={() => {
               setSelectedVoyage(null);
               setSelectedVoyageId(null);
@@ -1854,6 +2212,7 @@ const Camions = () => {
         onClose={() => setIsRouteMapOpen(false)}
         positions={selectedRoutePoints}
         routePath={selectedRoutePath}
+        enableClustering={false}
         title={
           selectedVoyage
             ? `Camion ${selectedVoyage.camion} - Voyage ${selectedVoyage.voycle || "—"}`
