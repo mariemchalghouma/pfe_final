@@ -3,32 +3,11 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  Area,
-  AreaChart,
-  CartesianGrid,
-  Line,
-  LineChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
-import {
-  FiActivity,
   FiAlertTriangle,
   FiArrowUp,
-  FiBell,
   FiCheckCircle,
-  FiClock,
   FiDroplet,
-  FiFileText,
-  FiMap,
   FiMapPin,
-  FiPhoneCall,
-  FiRefreshCw,
-  FiTruck,
-  FiUser,
-  FiUsers,
 } from "react-icons/fi";
 import MapModal from "@/components/map/MapModal";
 import {
@@ -45,8 +24,6 @@ const periods = [
   { id: "week", label: "7 jours", days: 7 },
   { id: "month", label: "30 jours", days: 30 },
 ];
-
-const demoCallsCount = 4;
 
 const toDateInput = (date) => date.toISOString().slice(0, 10);
 
@@ -90,45 +67,51 @@ const formatDateKey = (value) => {
   return toDateInput(date);
 };
 
-const getToneClasses = (tone) => {
-  switch (tone) {
-    case "success":
-      return {
-        card: "",
-        badge: "bg-emerald-100 text-emerald-700",
-        icon: "bg-emerald-100 text-emerald-500",
-        line: "text-emerald-700",
-      };
-    case "warning":
-      return {
-        card: "",
-        badge: "bg-amber-100 text-amber-700",
-        icon: "bg-amber-100 text-amber-500",
-        line: "text-amber-700",
-      };
-    case "danger":
-      return {
-        card: "",
-        badge: "bg-red-100 text-red-700",
-        icon: "bg-red-100 text-red-500",
-        line: "text-red-700",
-      };
-    case "info":
-      return {
-        card: "",
-        badge: "bg-orange-100 text-orange-600",
-        icon: "bg-orange-100 text-orange-500",
-        line: "text-sky-700",
-      };
-    default:
-      return {
-        card: "",
-        badge: "bg-gray-100 text-gray-700",
-        icon: "bg-gray-100 text-gray-700",
-        line: "text-gray-700",
-      };
-  }
-};
+/* ═══ Today stat card configs ═══ */
+const todayCardConfigs = [
+  {
+    key: "unreadNotifications",
+    label: "NOTIFICATIONS NON LUES",
+    icon: "🔔",
+    iconBg: "bg-red-50",
+    iconColor: "text-red-500",
+  },
+  {
+    key: "fuelAnomalies",
+    label: "ANOMALIES CARBURANT",
+    icon: "⛽",
+    iconBg: "bg-orange-50",
+    iconColor: "text-orange-500",
+  },
+  {
+    key: "callsToday",
+    label: "APPELS DU JOUR",
+    icon: "📞",
+    iconBg: "bg-blue-50",
+    iconColor: "text-blue-500",
+  },
+  {
+    key: "tripsTotal",
+    label: "TRAJETS DU JOUR",
+    icon: "🛤️",
+    iconBg: "bg-purple-50",
+    iconColor: "text-purple-500",
+  },
+  {
+    key: "tripsCompleted",
+    label: "TRAJETS TERMINÉS",
+    icon: "✅",
+    iconBg: "bg-emerald-50",
+    iconColor: "text-emerald-500",
+  },
+  {
+    key: "tripsInProgress",
+    label: "TRAJETS EN COURS",
+    icon: "🔄",
+    iconBg: "bg-amber-50",
+    iconColor: "text-amber-500",
+  },
+];
 
 const Dashboard = () => {
   const [period, setPeriod] = useState("week");
@@ -146,6 +129,7 @@ const Dashboard = () => {
   const [carburantRows, setCarburantRows] = useState([]);
   const [poiHistory, setPoiHistory] = useState([]);
   const [notifications, setNotifications] = useState([]);
+  const [todayStats, setTodayStats] = useState(null);
 
   const loadDashboard = useCallback(
     async (signal) => {
@@ -197,6 +181,7 @@ const Dashboard = () => {
         carburantResult,
         poiHistoryResult,
         notificationsResult,
+        dashboardStatsResult,
       ] = await Promise.all([
         withFallback(
           fetchJson("/api/users"),
@@ -242,6 +227,11 @@ const Dashboard = () => {
           { success: false, data: [] },
           "Notifications",
         ),
+        withFallback(
+          fetchJson("/api/dashboard"),
+          { success: false, data: null },
+          "Dashboard Stats",
+        ),
       ]);
 
       setUsers(Array.isArray(usersResult?.data) ? usersResult.data : []);
@@ -262,6 +252,7 @@ const Dashboard = () => {
           ? notificationsResult.data
           : [],
       );
+      setTodayStats(dashboardStatsResult?.data || null);
 
       setLastUpdated(new Date());
     },
@@ -328,369 +319,138 @@ const Dashboard = () => {
     [camions],
   );
 
-  const activeUsers = useMemo(
-    () =>
-      users.filter((user) => {
-        const status = normalizeText(user.status);
-        return (
-          status === "actif" || status === "active" || status === "enabled"
-        );
-      }).length,
-    [users],
-  );
 
-  const totalUsers = users.length;
-  const totalPois = pois.length;
-  const totalCamions = camions.length;
-  const fuelReclamations = reclamations.length;
-  const fuelAnomalies = carburantRows.filter(
-    (row) => row.statut && normalizeText(row.statut) !== "normal",
-  );
-  const anomaliesTraitees = fuelAnomalies.filter(
-    (row) => normalizeText(row.statut_decision) === "confirmee",
-  ).length;
-  const anomaliesNonTraitees = fuelAnomalies.filter(
-    (row) => normalizeText(row.statut_decision) !== "confirmee",
-  ).length;
-  const openAlerts = notifications.length;
-  const nonConformingStops = arrets.filter(
-    (stop) => normalizeText(stop.status) !== "conforme",
-  ).length;
 
-  const callsToday = demoCallsCount;
 
-  const kpis = [
-    {
-      title: "Nombre total d'utilisateurs",
-      value: totalUsers,
-      subtitle: `${activeUsers} actifs`,
-      icon: FiUsers,
-      tone: "info",
-      change: `Sur ${totalUsers} comptes`,
-    },
-    {
-      title: "Nombre de POI",
-      value: totalPois,
-      subtitle: "Points de contrôle et sites",
-      icon: FiMapPin,
-      tone: "success",
-      change: `${poiHistory.length} mouvements récents`,
-    },
-    {
-      title: "Réclamations carburant",
-      value: fuelReclamations,
-      subtitle: `${reclamations.filter((item) => normalizeText(item.statutAnomalie) === "en_attente").length} en attente`,
-      icon: FiDroplet,
-      tone: "warning",
-      change: `${periods.find((item) => item.id === period)?.label || "Période"}`,
-    },
-    {
-      title: "Anomalies traitées",
-      value: anomaliesTraitees,
-      subtitle: "Statuts confirmés",
-      icon: FiCheckCircle,
-      tone: "success",
-    },
-    {
-      title: "Anomalies non traitées",
-      value: anomaliesNonTraitees,
-      subtitle: "En attente de traitement",
-      icon: FiAlertTriangle,
-      tone: "danger",
-    },
-    {
-      title: "Total camions",
-      value: totalCamions,
-      subtitle: `${camions.filter((camion) => normalizeText(camion.statut) === "en_route").length} en route`,
-      icon: FiTruck,
-      tone: "default",
-      change: `${camions.filter((camion) => normalizeText(camion.statut) !== "en_route").length} à l&apos;arrêt`,
-    },
-    {
-      title: "Utilisateurs actifs",
-      value: activeUsers,
-      subtitle: "Dernier statut connu",
-      icon: FiUser,
-      tone: "success",
-      change: `${Math.max(totalUsers - activeUsers, 0)} inactifs`,
-    },
-    {
-      title: "Appels du jour",
-      value: callsToday,
-      subtitle: "Source démonstration en attente d'API",
-      icon: FiPhoneCall,
-      tone: "info",
-      change: "à brancher",
-    },
-    {
-      title: "Arrêts non conformes",
-      value: nonConformingStops,
-      subtitle: "Sur la période sélectionnée",
-      icon: FiActivity,
-      tone: "danger",
-      change: `${arrets.length} arrêts analysés`,
-    },
-    {
-      title: "Alertes",
-      value: openAlerts,
-      subtitle: "Notifications de terrain",
-      icon: FiBell,
-      tone: "warning",
-      change: "mise à jour automatique",
-    },
-  ];
-
-  const reclamationChartData = useMemo(() => {
-    const grouped = new Map();
-
-    reclamations.forEach((item) => {
-      const key = formatDateKey(item.dateTransaction || item.createdAt);
-      if (!key) return;
-      grouped.set(key, (grouped.get(key) || 0) + 1);
-    });
-
-    return Array.from(grouped.entries())
-      .map(([date, count]) => ({ date, count }))
-      .sort((a, b) => a.date.localeCompare(b.date));
-  }, [reclamations]);
-
-  const stopsChartData = useMemo(() => {
-    const grouped = new Map();
-
-    arrets.forEach((item) => {
-      const key = formatDateKey(item.date);
-      if (!key) return;
-      const isConforme = normalizeText(item.status) === "conforme";
-      if (!isConforme) {
-        grouped.set(key, (grouped.get(key) || 0) + 1);
-      } else if (!grouped.has(key)) {
-        grouped.set(key, 0);
-      }
-    });
-
-    return Array.from(grouped.entries())
-      .map(([date, count]) => ({ date, count }))
-      .sort((a, b) => a.date.localeCompare(b.date));
-  }, [arrets]);
-
-  const recentActivity = useMemo(() => {
-    const items = [];
-
-    reclamations
-      .slice(0, 5)
-      .sort(
-        (a, b) =>
-          new Date(b.createdAt || b.dateTransaction) -
-          new Date(a.createdAt || a.dateTransaction),
-      )
-      .forEach((item) => {
-        items.push({
-          id: `reclamation-${item.id}`,
-          title: `Réclamation carburant - ${item.matricule}`,
-          description: `${item.commentaire || "Réclamation enregistrée"} · ticket ${item.numTicket || "—"}`,
-          meta: formatDateTime(item.createdAt || item.dateTransaction),
-          tone: "warning",
-          href: "/reclamations",
-        });
-      });
-
-    poiHistory.slice(0, 5).forEach((item, index) => {
-      items.push({
-        id: `poi-${item.id || index}`,
-        title: `${item.action || "Mise à jour"} POI ${item.poi_code || item.code || "—"}`,
-        description: item.details || "Historique POI",
-        meta: formatDateTime(item.created_at || item.createdAt),
-        tone: item.action === "CREATE" ? "success" : "info",
-        href: "/gestion-poi",
-      });
-    });
-
-    notifications.slice(0, 5).forEach((item) => {
-      items.push({
-        id: `notif-${item.id}`,
-        title: item.title || "Alerte",
-        description: item.message || "Notification opérationnelle",
-        meta: `${item.date || ""} ${item.time || ""}`.trim(),
-        tone: item.type === "Arrêt" ? "danger" : "warning",
-        href: "/notifications",
-      });
-    });
-
-    return items
-      .sort((a, b) => {
-        const left = new Date(a.meta || 0).getTime();
-        const right = new Date(b.meta || 0).getTime();
-        return Number.isNaN(right) || Number.isNaN(left) ? 0 : right - left;
-      })
-      .slice(0, 10);
-  }, [notifications, poiHistory, reclamations]);
-
-  const latestAlerts = useMemo(
-    () =>
-      notifications.slice(0, 6).map((item) => ({
-        id: item.id,
-        title: item.title,
-        message: item.message,
-        meta: `${item.date || ""} ${item.time || ""}`.trim(),
-        tone: item.type === "Arrêt" ? "danger" : "warning",
-      })),
-    [notifications],
-  );
-
-  const fleetSummary = useMemo(() => {
-    const enRoute = camions.filter(
-      (camion) => normalizeText(camion.statut) === "en_route",
-    ).length;
-    const stopped = Math.max(totalCamions - enRoute, 0);
-    const activeRatio =
-      totalCamions > 0 ? Math.round((enRoute / totalCamions) * 100) : 0;
-    return { enRoute, stopped, activeRatio };
-  }, [camions, totalCamions]);
-
-  const periodLabel =
-    periods.find((item) => item.id === period)?.label || "7 jours";
-
-  const renderStatCard = (item) => {
-    const tone = getToneClasses(item.tone);
-    const Icon = item.icon;
-
-    return (
-      <div
-        key={item.title}
-        className="min-h-[150px] rounded-[18px] border border-slate-200 bg-white p-5 shadow-[0_2px_8px_rgba(15,23,42,0.04)]"
-      >
-        <div className="flex h-full flex-col justify-between gap-3">
-          <div className="flex items-start justify-between gap-3">
-            <p className="max-w-[72%] text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500">
-              {item.title}
-            </p>
-            <div
-              className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl ${tone.icon}`}
-            >
-              <Icon className="text-[18px]" />
-            </div>
-          </div>
-          <div>
-            <p className="text-[26px] font-black leading-none tracking-tight text-slate-950">
-              {formatNumber(item.value)}
-            </p>
-          </div>
-        </div>
-      </div>
-    );
+  /* ═══ Prediction gradient bar color ═══ */
+  const getPredictionBarStyle = (pct) => {
+    if (pct >= 90) return "bg-gradient-to-r from-red-400 to-red-600";
+    if (pct >= 75) return "bg-gradient-to-r from-orange-400 to-red-500";
+    return "bg-gradient-to-r from-yellow-400 to-orange-500";
   };
 
   return (
     <>
       <div className="mx-auto max-w-[1540px] space-y-8 px-6 py-8 xl:px-10">
-        <section className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
-          {kpis.map(renderStatCard)}
-        </section>
-
-        <section className="grid grid-cols-1 gap-6 xl:grid-cols-2">
-          <div className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
-            <div className="mb-5 flex items-start justify-between gap-4">
-              <div>
-                <h2 className="mt-1.5 text-[16px] font-bold tracking-tight text-slate-800">
-                  Réclamations carburant
-                </h2>
-                <p className="mt-1 text-[12px] text-slate-500">
-                  Évolution sur {periodLabel.toLowerCase()}
+        {/* ═══════════════════════════════════════════════
+            SECTION 1: TODAY'S KPI CARDS (6 cards row)
+            ═══════════════════════════════════════════════ */}
+        <section className="grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-6">
+          {todayCardConfigs.map((cfg) => {
+            const value = todayStats?.[cfg.key] ?? "—";
+            return (
+              <div
+                key={cfg.key}
+                className="group relative overflow-hidden rounded-2xl border border-slate-100 bg-white p-5 shadow-[0_2px_12px_rgba(15,23,42,0.04)] transition-all duration-200 hover:shadow-[0_4px_20px_rgba(15,23,42,0.08)]"
+              >
+                <div className="mb-1 flex items-center justify-between">
+                  <span className="text-xl">{cfg.icon}</span>
+                  <span className="rounded-full bg-slate-50 px-2 py-0.5 text-[9px] font-bold uppercase tracking-widest text-slate-400">
+                    Aujourd&apos;hui
+                  </span>
+                </div>
+                <p className="mt-3 text-[10px] font-semibold uppercase tracking-[0.15em] text-slate-400">
+                  {cfg.label}
+                </p>
+                <p className="mt-1 text-[28px] font-black leading-none tracking-tight text-slate-900">
+                  {loading ? (
+                    <span className="inline-block h-7 w-10 animate-pulse rounded bg-slate-100" />
+                  ) : (
+                    formatNumber(value)
+                  )}
                 </p>
               </div>
-              <Link
-                href="/reclamations"
-                className="inline-flex items-center gap-2 text-[12px] font-semibold text-orange-500 transition-colors hover:text-orange-600"
-              >
-                Détails <FiArrowUp className="rotate-45" />
-              </Link>
-            </div>
-            <ResponsiveContainer width="100%" height={300}>
-              <AreaChart data={reclamationChartData}>
-                <defs>
-                  <linearGradient id="fuelGradient" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#f97316" stopOpacity={0.28} />
-                    <stop offset="95%" stopColor="#f97316" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                <XAxis
-                  dataKey="date"
-                  tick={{ fontSize: 10 }}
-                  tickLine={false}
-                  axisLine={false}
-                />
-                <YAxis
-                  tick={{ fontSize: 10 }}
-                  tickLine={false}
-                  axisLine={false}
-                  allowDecimals={false}
-                />
-                <Tooltip />
-                <Area
-                  type="monotone"
-                  dataKey="count"
-                  stroke="#f97316"
-                  fill="url(#fuelGradient)"
-                  strokeWidth={3}
-                />
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
-
-          <div className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
-            <div className="mb-5 flex items-start justify-between gap-4">
-              <div>
-                <h2 className="mt-1.5 text-[16px] font-bold tracking-tight text-slate-800">
-                  Arrêts non conformes
-                </h2>
-                <p className="mt-1 text-[12px] text-slate-500">
-                  Évolution sur {periodLabel.toLowerCase()}
-                </p>
-              </div>
-              <Link
-                href="/suivi-arret"
-                className="inline-flex items-center gap-2 text-[12px] font-semibold text-orange-500 transition-colors hover:text-orange-600"
-              >
-                Détails <FiArrowUp className="rotate-45" />
-              </Link>
-            </div>
-            <ResponsiveContainer width="100%" height={300}>
-              <LineChart data={stopsChartData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                <XAxis
-                  dataKey="date"
-                  tick={{ fontSize: 10 }}
-                  tickLine={false}
-                  axisLine={false}
-                />
-                <YAxis
-                  tick={{ fontSize: 10 }}
-                  tickLine={false}
-                  axisLine={false}
-                  allowDecimals={false}
-                />
-                <Tooltip />
-                <Line
-                  type="monotone"
-                  dataKey="count"
-                  stroke="#dc2626"
-                  strokeWidth={3}
-                  dot={{ r: 3 }}
-                  activeDot={{ r: 6 }}
-                />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
+            );
+          })}
         </section>
 
-        <section className="grid grid-cols-1 gap-6 xl:grid-cols-2">
-          <div className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
+        {/* ═══════════════════════════════════════════════
+            SECTION 2: PREDICTION > 60% + CHARTS
+            ═══════════════════════════════════════════════ */}
+        <section className="grid grid-cols-1 gap-6 xl:grid-cols-3">
+          {/* ── Prediction > 60% Panel ── */}
+          <div className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm xl:col-span-1">
+            <div className="mb-5 flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-red-50">
+                <FiAlertTriangle className="text-red-500" />
+              </div>
+              <div className="flex-1">
+                <h2 className="text-[15px] font-bold tracking-tight text-slate-800">
+                  Prédiction &gt; 60%
+                </h2>
+                <p className="text-[11px] text-slate-400">
+                  Chauffeurs à risque
+                </p>
+              </div>
+              <span className="flex h-7 w-7 items-center justify-center rounded-full bg-red-500 text-[11px] font-bold text-white">
+                {todayStats?.predictionsCount ?? 0}
+              </span>
+            </div>
+
+            <div className="max-h-[420px] space-y-4 overflow-y-auto pr-1">
+              {loading ? (
+                <div className="space-y-4">
+                  {[1, 2, 3].map((i) => (
+                    <div key={i} className="animate-pulse space-y-2">
+                      <div className="h-4 w-3/4 rounded bg-slate-100" />
+                      <div className="h-3 w-full rounded bg-slate-50" />
+                    </div>
+                  ))}
+                </div>
+              ) : todayStats?.predictions?.length > 0 ? (
+                todayStats.predictions.map((driver, idx) => (
+                  <div
+                    key={idx}
+                    className="rounded-xl border border-slate-100 px-4 py-3"
+                  >
+                    <div className="mb-1 flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="h-2 w-2 rounded-full bg-emerald-400" />
+                        <span className="text-[13px] font-bold text-slate-800">
+                          {driver.nom_chauffeur}
+                        </span>
+                      </div>
+                      <span className="text-[13px] font-black text-red-500">
+                        ~{driver.prediction_pct}%
+                      </span>
+                    </div>
+                    <div className="mb-2 flex items-center gap-2 text-[11px] text-slate-400">
+                      <span>{driver.camion_id}</span>
+                      <span>·</span>
+                      <span>{driver.nb_appels} rav.</span>
+                      <span className="ml-auto">
+                        Écart moy. {driver.ecart_moy}%
+                      </span>
+                    </div>
+                    <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100">
+                      <div
+                        className={`h-full rounded-full transition-all duration-500 ${getPredictionBarStyle(driver.prediction_pct)}`}
+                        style={{
+                          width: `${Math.min(driver.prediction_pct, 100)}%`,
+                        }}
+                      />
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="py-8 text-center text-[13px] text-slate-400">
+                  <FiCheckCircle className="mx-auto mb-2 text-2xl text-emerald-400" />
+                  Aucun chauffeur à risque aujourd&apos;hui
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* ── Dernières réclamations ── */}
+          <div className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm xl:col-span-2">
             <div className="mb-6 flex items-start justify-between gap-4">
               <div>
                 <h2 className="mt-1.5 text-[16px] font-bold tracking-tight text-slate-800">
                   Dernières réclamations
                 </h2>
+                <p className="mt-1 text-[12px] text-slate-500">
+                  Réclamations carburant récentes
+                </p>
               </div>
               <Link
                 href="/reclamations"
@@ -699,24 +459,33 @@ const Dashboard = () => {
                 Voir tout <FiArrowUp className="rotate-45" />
               </Link>
             </div>
-
-            <div className="space-y-4">
-              {reclamations.slice(0, 4).map((item) => (
+            <div className="space-y-3">
+              {(!todayStats?.latestReclamations?.length) && !loading && (
+                <p className="py-6 text-center text-[13px] text-slate-400">
+                  Aucune réclamation récente
+                </p>
+              )}
+              {(todayStats?.latestReclamations || []).map((item) => (
                 <div
                   key={item.id}
-                  className="flex items-start justify-between gap-4 rounded-2xl px-2 py-1.5"
+                  className="flex items-center justify-between gap-4 rounded-xl border border-slate-50 px-4 py-3 transition-colors hover:bg-slate-50/60"
                 >
-                  <div className="min-w-0">
-                    <p className="text-[14px] font-semibold text-slate-800">
-                      {item.matricule}
-                    </p>
-                    <p className="text-[12px] text-slate-500">
-                      {item.commentaire || "Réclamation carburant"} •{" "}
-                      {formatDateTime(item.createdAt || item.dateTransaction)}
-                    </p>
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-orange-50 text-[14px] font-bold text-orange-500">
+                      <FiDroplet />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-[13px] font-semibold text-slate-800">
+                        {item.matricule}
+                      </p>
+                      <p className="text-[11px] text-slate-400">
+                        {item.commentaire || "Réclamation carburant"} •{" "}
+                        {formatDateTime(item.createdAt || item.dateTransaction)}
+                      </p>
+                    </div>
                   </div>
                   <span
-                    className={`rounded-full px-3 py-1 text-[9px] font-semibold uppercase tracking-[0.18em] ${item.statutAnomalie === "CONFIRMEE" ? "bg-emerald-100 text-emerald-700" : item.statutAnomalie === "REJETEE" ? "bg-slate-100 text-slate-600" : "bg-amber-100 text-amber-700"}`}
+                    className={`shrink-0 rounded-full px-3 py-1 text-[9px] font-semibold uppercase tracking-[0.18em] ${item.statutAnomalie === "CONFIRMEE" ? "bg-emerald-100 text-emerald-700" : item.statutAnomalie === "REJETEE" ? "bg-slate-100 text-slate-600" : "bg-amber-100 text-amber-700"}`}
                   >
                     {item.statutAnomalie === "CONFIRMEE"
                       ? "Fermée"
@@ -728,14 +497,17 @@ const Dashboard = () => {
               ))}
             </div>
           </div>
+        </section>
 
+        {/* ═══════════════════════════════════════════════
+            SECTION 3: NOUVEAUX POI
+            ═══════════════════════════════════════════════ */}
+        <section className="grid grid-cols-1 gap-6">
           <div className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
             <div className="mb-6 flex items-start justify-between gap-4">
-              <div>
-                <h2 className="mt-1.5 text-[16px] font-bold tracking-tight text-slate-800">
-                  Nouveaux POI
-                </h2>
-              </div>
+              <h2 className="mt-1.5 text-[16px] font-bold tracking-tight text-slate-800">
+                Nouveaux POI
+              </h2>
               <Link
                 href="/gestion-poi"
                 className="inline-flex items-center gap-2 text-[12px] font-semibold text-orange-500 transition-colors hover:text-orange-600"
@@ -743,7 +515,6 @@ const Dashboard = () => {
                 Voir tout <FiArrowUp className="rotate-45" />
               </Link>
             </div>
-
             <div className="space-y-4">
               {pois.slice(0, 4).map((poi, index) => (
                 <div

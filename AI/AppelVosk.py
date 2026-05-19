@@ -54,11 +54,11 @@ VAD_RMS_FALLBACK       = 280
 
 NUMERO_CHAUFFEUR    = "+21692025375"
 TTS_VOICE           = "ar-SA-ZariyahNeural"
-TTS_RATE            = "+10%"
+TTS_RATE            = "+0%"
 TTS_VOLUME          = "+100%"
-TTS_VOLUME_FACTOR   = 2.5
-TTS_SILENCE_DEBUT_S = 1.5
-TTS_SILENCE_FIN_S   = 0.8
+TTS_VOLUME_FACTOR   = 2.0
+TTS_SILENCE_DEBUT_S = 2.0
+TTS_SILENCE_FIN_S   = 1.0
 DELAI_AVANT_CLIC_S  = 18
 
 
@@ -84,13 +84,94 @@ DB_HOST = "localhost"; DB_PORT = 5432
 DB_NAME = "tracking"; DB_USER = "postgres"; DB_PASSWORD = "12345"
 
 
-SYSTEM_PROMPT = """أنت مساعد هاتفي للسائق في شركة نقل.
-تتحدث باللهجة التونسية فقط. ردك دايماً قصير: جملة أو جملتين.
-دورك الوحيد: أسئلة الوقود والأعطال.
-- كم لتر يضيف
-- أين أقرب محطة توتال
-- تحذير إذا تجاوز هدف الاستهلاك
-لا فرنسية. تونسي دارجة فقط."""
+SYSTEM_PROMPT = """أنت مساعد هاتفي آلي لشركة نقل تونسية. تتكلم بالدارجة التونسية فقط.
+
+## السياق:
+- أنت تتصل بالسائق (الشوفار) لأن النظام اكتشف مشكلة في الكاميون:
+  1. **توقف غير مبرر** = الكاميون واقف في مكان ما عندوش POI (نقطة اهتمام مسجلة). الوقفة العادية ما تتجاوزش 15 دقيقة.
+  2. **فتح الباب** = الباب تحل في وقت غير عادي أو في مكان مشبوه.
+  3. **نقص في الكاربوران** = الوقود نقص بنسبة كبيرة (أكثر من 15%).
+
+## قواعد تقييم التوقف (OBLIGATOIRE):
+### ✅ توقف مبرر (CONFORME) — إذا السبب مقبول والمدة ≤ 15 دقيقة:
+- استراحة قصيرة (قهوة، صلاة، أكل) ← أقل من 15 دقيقة = مقبول
+- تحميل / تفريغ عند حريف
+- أزمة سير / حادث في الطريق
+- مشكل GPS (خطأ في النظام)
+
+### ❌ توقف غير مبرر (NON CONFORME) — إذا:
+- الاستراحة تجاوزت 15 دقيقة ← غير مبرر
+- ما عندوش سبب واضح للتوقف
+- التوقف في مكان مشبوه بدون تفسير
+
+## كيفاش تتعامل مع كل حالة:
+
+### 1. عطب / بان (panne):
+- إذا السائق قالك عندو عطب، بان، مشكل ميكانيكي، كريفا، موتور، فران، إلخ:
+  → قلّو: "لازم تعمل ريكلاماسيون من تطبيقة Llwin باش الشركة تتابع الموضوع"
+  → ولا أعطيه الأرقام: "تنجم تتصل بالمسؤول: السيد أحمد 92 025 375 أو الديسباتش 71 234 567"
+  → سجّل أن السبب عطب ميكانيكي
+
+### 2. استراحة / بوز (pause):
+- اسأل قداش وقت الوقفة
+- إذا الوقفة ≤ 15 دقيقة والسبب مقبول (قهوة، صلاة، أكل):
+  → "ماشي مشكل. الوقفة مقبولة. نسجلوها."
+  → سجّل: توقف مبرر (conforme)
+- إذا الوقفة > 15 دقيقة:
+  → "نذكرك أن الوقفة ما لازمش تتجاوز 15 دقيقة. هذي تتسجل كوقفة غير مبررة."
+  → سجّل: توقف غير مبرر (non conforme)
+
+### 3. نقص كاربوران:
+- اسأل إذا عبّا في محطة ولا صار نقص غريب
+- إذا تعبئة عادية ← سجّل وخلّيه يكمل
+- إذا نقص بدون تفسير ← اسأل أكثر وسجّل الإجابة
+
+### 4. فتح الباب:
+- اسأل علاش تحل الباب
+- إذا تحميل/تفريغ عند حريف ← عادي
+- إذا بدون سبب واضح ← سجّل وبلّغ
+
+## ⛔ المواضيع الخارجية (OBLIGATOIRE):
+- إذا السائق بدا يحكي على مواضيع ما عندهاش علاقة بالخدمة (سياسة، رياضة، حياة شخصية، نكت، إلخ):
+  → وقّفو فوراً وبأدب: "خويا، أنا المساعد الآلي متاع الشركة. نحكيو كان على الكاميون والطريق. شنو صار مع الكاميون؟"
+  → ما تكملش معاه في الموضوع الخارجي أبداً
+
+## القواعد:
+- تونسي دارجة فقط. ما تحكيش بالفرنسية أبداً
+- ردك قصير: جملة أو جملتين فقط. ما تكتبش بزاف
+- كون مهذب ومحترف
+- ما تعاودش نفس السؤال أكثر من مرتين
+- إذا السائق ما جاوبش واضح، اعاود اسأل بطريقة مختلفة
+- إذا السائق عصبي، هدّيه وقلّو أنك هنا باش تعاونو
+- ما تعطيش معلومات كاذبة ولا وعود ما تنجمش توفيها
+
+## أمثلة محادثات:
+
+مثال 1 — عطب:
+سائق: الكاميون عطل عليا
+أنت: واش من عطب؟ موتور ولا روايد ولا حاجة أخرى؟
+سائق: كريفا عندي
+أنت: فهمت، كريفا. لازم تعمل ريكلاماسيون من تطبيقة Llwin. ولا اتصل بالمسؤول: 92 025 375. نسجلو المشكل متاعك.
+
+مثال 2 — استراحة قصيرة (≤ 15 دق):
+سائق: واقف نستريح شوية، نشرب قهوة
+أنت: ماشي مشكل، الوقفة مقبولة. بس نذكرك ما تتجاوزش 15 دقيقة. نسجلو الإجابة متاعك.
+
+مثال 3 — استراحة طويلة (> 15 دق):
+سائق: واقف من ساعة نستريح
+أنت: خويا الوقفة تجاوزت 15 دقيقة، هذي تتسجل كوقفة غير مبررة. لازم تكمل الطريق.
+
+مثال 4 — نقص كاربوران:
+سائق: عبيت في المحطة
+أنت: تمام، تعبئة عادية في المحطة. نسجلوها. بالتوفيق في الطريق.
+
+مثال 5 — موضوع خارجي:
+سائق: شنحوالك، شنوة أخبار الماتش أمس؟
+أنت: خويا، أنا المساعد الآلي متاع الشركة. نحكيو كان على الكاميون والطريق. شنو صار مع الكاميون؟
+
+مثال 6 — ما يفهمش:
+سائق: اللو؟ شكون هذا؟
+أنت: أهلاً، أنا المساعد الآلي متاع الشركة. لاحظنا الكاميون واقف، نحبو نتأكدو أنك بخير. شنو صار؟"""
 
 
 SYSTEM_PROMPT_RAPPORT = """Tu es un analyste de transport logistique.
@@ -103,10 +184,13 @@ Le rapport doit contenir exactement ces sections :
 3. CAUSE IDENTIFIÉE : La cause probable selon les propos du chauffeur (panne, ravitaillement, pause, vol de carburant, erreur capteur, etc.)
 4. RÉPONSE AGENT : Ce que l'agent IA a proposé ou demandé
 5. STATUT FINAL : Résolu / En attente / Non résolu / Inconnu
-6. PRÉDICTION NON-CONFORMITÉ : Un pourcentage entre 0% et 100% estimant la probabilité que ce cas soit réellement non-conforme (vol, fraude, violation). Utilise ces critères :
-   - Explication claire et cohérente du chauffeur → faible (10-30%)
-   - Explication vague ou contradictoire → moyen (40-60%)
-   - Refus de répondre, incohérence, ou indices de fraude → élevé (70-100%)
+6. PRÉDICTION NON-CONFORMITÉ : Un pourcentage entre 0% et 100% estimant la probabilité que ce cas soit réellement non-conforme (vol, fraude, violation). Utilise ces critères STRICTEMENT :
+   - Explication claire, cohérente et vérifiable du chauffeur (panne confirmée, ravitaillement en station, pause courte ≤15min) → faible (10-25%)
+   - Explication acceptable mais non vérifiable (embouteillage, problème GPS) → modéré (30-50%)
+   - Explication vague, évasive, ou réponse peu claire / le chauffeur ne donne pas de réponse claire → ÉLEVÉ (60-80%)
+   - Refus de répondre, incohérence, contradiction, indices de fraude, ou aucune réponse → TRÈS ÉLEVÉ (85-100%)
+   - Pause déclarée > 15 minutes → au minimum 65%
+   IMPORTANT : Si le chauffeur ne fournit pas d'explication claire et convaincante, le score DOIT être ≥ 60%.
    Format: XX% - LABEL (où LABEL est: Conforme probable / Suspicion légère / Suspicion modérée / Suspicion élevée / Non-conforme probable)
 7. MOTS-CLÉS : 3-5 mots-clés séparés par des virgules
 8. RECOMMANDATION : Action suggérée pour le superviseur
@@ -218,11 +302,10 @@ def _sauvegarder_rapport(session_id: str, rapport: str):
         conn = connecter_bdd(); cur = conn.cursor()
         cur.execute("""
             INSERT INTO conversations_appels
-                (session_id, rapport, rapport_ts, prediction_pct, prediction_label, date_appel)
-            VALUES (%s, %s, NOW(), %s, %s, NOW())
+                (session_id, rapport, prediction_pct, prediction_label)
+            VALUES (%s, %s, %s, %s)
             ON CONFLICT (session_id) DO UPDATE SET
                 rapport          = EXCLUDED.rapport,
-                rapport_ts       = NOW(),
                 prediction_pct   = EXCLUDED.prediction_pct,
                 prediction_label = EXCLUDED.prediction_label
         """, (session_id, rapport, prediction.get("prediction_pct"), prediction.get("prediction_label")))
@@ -390,19 +473,15 @@ def init_tables_bdd():
                 camion_id VARCHAR(100),
                 conversation_texte TEXT,
                 fichier_audio VARCHAR(500),
-                duree_s FLOAT DEFAULT 0,
                 nb_tours INT DEFAULT 0,
                 rapport TEXT,
-                rapport_ts TIMESTAMP,
                 prediction_pct INT,
-                prediction_label VARCHAR(100),
-                date_appel TIMESTAMP DEFAULT NOW()
+                prediction_label VARCHAR(100)
             )
         """)
         # Ajouter les colonnes prediction si elles n'existent pas (migration)
         for col, col_type in [
             ("rapport", "TEXT"),
-            ("rapport_ts", "TIMESTAMP"),
             ("prediction_pct", "INT"),
             ("prediction_label", "VARCHAR(100)"),
         ]:
@@ -970,8 +1049,8 @@ def parler(texte):
         if sr != target_sr:
             g = gcd(int(sr), target_sr); data = resample_poly(data, target_sr//g, sr//g); sr = target_sr
         data = np.clip(data * TTS_VOLUME_FACTOR, -1.0, 1.0)
-        # Fade-in doux (100ms) pour éviter le début coupé via Bluetooth
-        fade_samples = min(int(sr * 0.1), len(data))
+        # Fade-in doux (200ms) pour éviter le début coupé via Bluetooth
+        fade_samples = min(int(sr * 0.2), len(data))
         if fade_samples > 0:
             data[:fade_samples] *= np.linspace(0, 1, fade_samples, dtype=np.float32)
         sil_d = np.zeros(int(sr * TTS_SILENCE_DEBUT_S), dtype=np.float32)
@@ -995,7 +1074,7 @@ def parler(texte):
             tts_pcm = float32_vers_pcm16(tts_complet)
             _enregistreur_global.ajouter(tts_pcm)
 
-        time.sleep(0.5)  # Laisser le CPU "souffler" après Ollama avant de jouer l'audio
+        time.sleep(0.8)  # Laisser le CPU "souffler" après Ollama avant de jouer l'audio
         sd.play(np.concatenate([sil_d, data, sil_f]), samplerate=sr, device=_output_device_idx); sd.wait()
         _enregistrement_actif = True  # Reprendre l'enregistrement
     except Exception as e: print(f"  ❌ TTS: {e}")
@@ -1008,13 +1087,42 @@ def parler(texte):
 #  OLLAMA — AGENT MÉTIER
 # ══════════════════════════════════════════════════════════════
 class AgentOllama:
-    def __init__(self, camion_id):
+    def __init__(self, camion_id, **kwargs):
         self.camion_id = camion_id
         self.historique = []
         self.tour = 0
         self.session_id = str(uuid.uuid4())[:8]
         self.t_debut = time.time()
+        # ── Contexte spécifique à cette non-conformité ──
+        self.context_info = self._build_context(kwargs)
         print(f"  ✅ Agent Ollama — camion {camion_id} — session {self.session_id}")
+
+
+    def _build_context(self, kwargs):
+        """Construit un message contextuel pour informer Ollama de la situation exacte."""
+        parts = []
+        type_nc = kwargs.get("type_nc", "")
+        nom = kwargs.get("nom_chauffeur", "")
+        duree = kwargs.get("duree_min", 0)
+        cas_nc = kwargs.get("cas_nc", 1)
+
+        parts.append(f"الكاميون: {self.camion_id}")
+        if nom:
+            parts.append(f"السائق: {nom}")
+
+        if cas_nc == 1:
+            parts.append(f"المشكل: الكاميون واقف منذ {duree} دقيقة في مكان ما فيهش POI مسجل. هذا توقف غير مبرر.")
+        elif cas_nc == 2:
+            duree_porte = kwargs.get("duree_porte_min", 0)
+            parts.append(f"المشكل: الكاميون واقف منذ {duree} دقيقة مع فتح الباب منذ {duree_porte} دقيقة.")
+        elif cas_nc == 3:
+            chute = kwargs.get("chute_pct", 0)
+            parts.append(f"المشكل: الكاميون واقف منذ {duree} دقيقة مع نقص في الوقود بنسبة {chute}%.")
+        elif cas_nc == 4:
+            chute = kwargs.get("chute_pct", 0)
+            parts.append(f"المشكل: نقص كبير في الوقود بنسبة {chute}% بدون توقف مبرر.")
+
+        return "\n".join(parts) if parts else ""
 
 
     def _sauvegarder_message_bdd(self, tour, role, contenu):
@@ -1033,16 +1141,22 @@ class AgentOllama:
     def repondre(self, texte_asr):
         if not texte_asr: return "ما سمعتكش مليح، عاود بالله"
         self.tour += 1
-        messages = [{"role": "system", "content": SYSTEM_PROMPT}
+        # Injecter le contexte spécifique dans le system prompt
+        full_prompt = SYSTEM_PROMPT
+        if self.context_info:
+            full_prompt += f"\n\n## الوضعية الحالية:\n{self.context_info}"
+        messages = [{"role": "system", "content": full_prompt}
                    ] + self.historique + [{"role": "user", "content": texte_asr}]
         try:
             t0 = time.time()
             resp = req_http.post(OLLAMA_URL,
                 json={"model": OLLAMA_MODEL, "messages": messages,
                       "stream": False, "options": {
-                          "temperature": 0.2,
-                          "num_predict": 60,      # ← réduit de 100 à 60 pour réponses plus rapides
-                          "num_ctx": 2048,         # ← limiter le contexte pour accélérer
+                          "temperature": 0.25,
+                          "num_predict": 120,
+                          "num_ctx": 4096,
+                          "repeat_penalty": 1.2,
+                          "top_p": 0.9,
                       }},
                 timeout=30)
             resp_json = resp.json()
@@ -1108,18 +1222,16 @@ class AgentOllama:
             cur.execute("""
                 INSERT INTO conversations_appels
                     (session_id, camion_id, conversation_texte, fichier_audio,
-                     duree_s, nb_tours, date_appel)
-                VALUES (%s, %s, %s, %s, %s, %s, NOW())
+                     nb_tours)
+                VALUES (%s, %s, %s, %s, %s)
                 ON CONFLICT (session_id) DO UPDATE SET
                     conversation_texte = EXCLUDED.conversation_texte,
                     fichier_audio = EXCLUDED.fichier_audio,
-                    duree_s = EXCLUDED.duree_s,
                     nb_tours = EXCLUDED.nb_tours
             """, (
                 self.session_id, self.camion_id,
                 conversation_texte,
                 fichier_audio or OUTPUT_WAV,
-                duree_totale,
                 self.tour
             ))
             conn.commit(); conn.close()
@@ -1493,7 +1605,7 @@ def boucle_ecoute(stream, rate, on_texte, actif, enreg=None):
             continue
 
 
-        if enreg: enreg.ajouter(raw)
+        if enreg and _enregistrement_actif: enreg.ajouter(raw)
         rms = get_rms(raw)
 
 

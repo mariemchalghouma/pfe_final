@@ -148,10 +148,13 @@ Le rapport doit contenir exactement ces sections :
 3. CAUSE IDENTIFIÉE : La cause probable selon les propos du chauffeur (panne, ravitaillement, pause, vol de carburant, erreur capteur, etc.)
 4. RÉPONSE AGENT : Ce que l'agent IA a proposé ou demandé
 5. STATUT FINAL : Résolu / En attente / Non résolu / Inconnu
-6. PRÉDICTION NON-CONFORMITÉ : Un pourcentage entre 0% et 100% estimant la probabilité que ce cas soit réellement non-conforme (vol, fraude, violation). Utilise ces critères :
-   - Explication claire et cohérente du chauffeur → faible (10-30%)
-   - Explication vague ou contradictoire → moyen (40-60%)
-   - Refus de répondre, incohérence, ou indices de fraude → élevé (70-100%)
+6. PRÉDICTION NON-CONFORMITÉ : Un pourcentage entre 0% et 100% estimant la probabilité que ce cas soit réellement non-conforme (vol, fraude, violation). Utilise ces critères STRICTEMENT :
+   - Explication claire, cohérente et vérifiable du chauffeur (panne confirmée, ravitaillement en station, pause courte ≤15min) → faible (10-25%)
+   - Explication acceptable mais non vérifiable (embouteillage, problème GPS) → modéré (30-50%)
+   - Explication vague, évasive, ou réponse peu claire / le chauffeur ne donne pas de réponse claire → ÉLEVÉ (60-80%)
+   - Refus de répondre, incohérence, contradiction, indices de fraude, ou aucune réponse → TRÈS ÉLEVÉ (85-100%)
+   - Pause déclarée > 15 minutes → au minimum 65%
+   IMPORTANT : Si le chauffeur ne fournit pas d'explication claire et convaincante, le score DOIT être ≥ 60%.
    Format: XX% - LABEL (où LABEL est: Conforme probable / Suspicion légère / Suspicion modérée / Suspicion élevée / Non-conforme probable)
 7. MOTS-CLÉS : 3-5 mots-clés séparés par des virgules
 8. RECOMMANDATION : Action suggérée pour le superviseur
@@ -711,7 +714,15 @@ def _executer_appel_auto(row: dict, detection_id: int = None):
     print(f"\n  📞 Appel auto → {nom_chauffeur} ({numero})")
 
 
-    agent = AgentOllama(camion_id)
+    agent = AgentOllama(
+        camion_id,
+        nom_chauffeur=nom_chauffeur,
+        type_nc=type_nc,
+        duree_min=duree,
+        cas_nc=row.get("cas_nc", 1),
+        chute_pct=row.get("chute_pct", 0),
+        duree_porte_min=row.get("duree_porte_min", 0),
+    )
     _surv = SurveilleAppel(
         mode="outgoing",
         camion_id=camion_id,
@@ -1834,11 +1845,13 @@ def route_conversation(session_id: str):
         cur  = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
 
-        # Conversation complète
-        cur.execute(
-            "SELECT * FROM conversations_appels WHERE session_id=%s",
-            (session_id,)
-        )
+        # Conversation complète (JOIN historique_appels pour duree_s et date_appel)
+        cur.execute("""
+            SELECT c.*, h.duree_s, h.date_appel
+            FROM conversations_appels c
+            LEFT JOIN historique_appels h ON h.session_id = c.session_id
+            WHERE c.session_id=%s
+        """, (session_id,))
         conv = cur.fetchone()
         
         if conv:
@@ -1886,20 +1899,22 @@ def liste_rapports(limit: int = 20, camion_id: str = None):
 
         if camion_id:
             cur.execute("""
-                SELECT session_id, camion_id, duree_s, nb_tours,
-                       date_appel, rapport, rapport_ts
-                FROM conversations_appels
-                WHERE rapport IS NOT NULL
-                  AND camion_id = %s
-                ORDER BY date_appel DESC LIMIT %s
+                SELECT c.session_id, c.camion_id, h.duree_s, c.nb_tours,
+                       h.date_appel, c.rapport
+                FROM conversations_appels c
+                LEFT JOIN historique_appels h ON h.session_id = c.session_id
+                WHERE c.rapport IS NOT NULL
+                  AND c.camion_id = %s
+                ORDER BY h.date_appel DESC LIMIT %s
             """, (camion_id, limit))
         else:
             cur.execute("""
-                SELECT session_id, camion_id, duree_s, nb_tours,
-                       date_appel, rapport, rapport_ts
-                FROM conversations_appels
-                WHERE rapport IS NOT NULL
-                ORDER BY date_appel DESC LIMIT %s
+                SELECT c.session_id, c.camion_id, h.duree_s, c.nb_tours,
+                       h.date_appel, c.rapport
+                FROM conversations_appels c
+                LEFT JOIN historique_appels h ON h.session_id = c.session_id
+                WHERE c.rapport IS NOT NULL
+                ORDER BY h.date_appel DESC LIMIT %s
             """, (limit,))
 
 

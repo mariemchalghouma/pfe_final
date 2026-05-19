@@ -1574,6 +1574,7 @@ const Camions = () => {
   const [ganttLoading, setGanttLoading] = useState(false);
   const [ganttSearch, setGanttSearch] = useState("");
   const [ganttSite, setGanttSite] = useState("ALL");
+  const [ganttTripStatus, setGanttTripStatus] = useState("ALL");
 
   // Popover state
   const [activePopover, setActivePopover] = useState(null); // { segment, position }
@@ -1729,9 +1730,16 @@ const Camions = () => {
             normalizeSite(c.code) === ganttSite,
         );
 
-      return matchesSearch && matchesSite;
+      let matchesTripStatus = true;
+      if (ganttTripStatus !== "ALL") {
+        const enCours = computeIsEnCours(d, ganttDate);
+        if (ganttTripStatus === "en_cours") matchesTripStatus = enCours;
+        else if (ganttTripStatus === "termine") matchesTripStatus = !enCours;
+      }
+
+      return matchesSearch && matchesSite && matchesTripStatus;
     });
-  }, [ganttData, ganttSearch, ganttSite]);
+  }, [ganttData, ganttSearch, ganttSite, ganttTripStatus, ganttDate]);
 
   const ganttStats = useMemo(() => {
     const uniqueCamions = new Set(filteredGantt.map((d) => d.camion));
@@ -1991,6 +1999,28 @@ const Camions = () => {
                   {site}
                 </option>
               ))}
+            </select>
+            <select
+              value={ganttTripStatus}
+              onChange={(e) => setGanttTripStatus(e.target.value)}
+              style={{
+                minWidth: "160px",
+                height: "40px",
+                padding: "9px 14px",
+                border: "1px solid #e5e7eb",
+                borderRadius: "12px",
+                background: "white",
+                fontSize: "13px",
+                fontWeight: 400,
+                fontFamily: "'Inter', sans-serif",
+                color: "#6b7280",
+                outline: "none",
+                cursor: "pointer",
+              }}
+            >
+              <option value="ALL">Tous les trajets</option>
+              <option value="en_cours">En cours</option>
+              <option value="termine">Terminé</option>
             </select>
             <div className="flex items-center gap-2 ml-auto">
               <span

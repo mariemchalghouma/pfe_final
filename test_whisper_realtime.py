@@ -27,6 +27,7 @@ Fonctionnalités portées de AppelCall.py :
 import sys, os, time, struct, threading, wave, tempfile, re
 import subprocess, uuid, json, asyncio
 import numpy as np
+from datetime import datetime, timedelta
 
 
 # ══════════════════════════════════════════════════════════════
@@ -54,17 +55,18 @@ VAD_RMS_FALLBACK       = 280
 NUMERO_CHAUFFEUR    = "+21692025375"
 TTS_VOICE           = "ar-SA-ZariyahNeural"
 TTS_RATE            = "+0%"
-TTS_VOLUME          = "+50%"
-TTS_VOLUME_FACTOR   = 3.2
-TTS_SILENCE_DEBUT_S = 0.5
-TTS_SILENCE_FIN_S   = 0.8
+TTS_VOLUME          = "+100%"
+TTS_VOLUME_FACTOR   = 2.0
+TTS_SILENCE_DEBUT_S = 2.0
+TTS_SILENCE_FIN_S   = 1.0
 DELAI_AVANT_CLIC_S  = 18
 
 
 OLLAMA_URL          = "http://localhost:11434/api/chat"
-OLLAMA_MODEL        = "aya"
+OLLAMA_MODEL        = "qwen2.5:3b"
 OUTPUT_FILE         = r"C:\Users\Admin\Downloads\transcription_appel.txt"
 OUTPUT_WAV          = r"C:\Users\Admin\Downloads\conversation_whisper.wav"
+OUTPUT_WAV_DIR      = r"C:\Users\Admin\Downloads\appels_audio"
 OUTPUT_DIAG_LOG     = r"C:\Users\Admin\Downloads\diag_whisper.jsonl"
 SESSION_LOG_PATH    = r"C:\Users\Admin\Downloads\sessions_appel.jsonl"
 
@@ -82,13 +84,20 @@ DB_HOST = "localhost"; DB_PORT = 5432
 DB_NAME = "tracking"; DB_USER = "postgres"; DB_PASSWORD = "12345"
 
 
-SYSTEM_PROMPT = """أنت مساعد هاتفي للسائق في شركة نقل.
-تتحدث باللهجة التونسية فقط. ردك دايماً قصير: جملة أو جملتين.
-دورك الوحيد: أسئلة الوقود والأعطال.
-- كم لتر يضيف
-- أين أقرب محطة توتال
-- تحذير إذا تجاوز هدف الاستهلاك
-لا فرنسية. تونسي دارجة فقط."""
+SYSTEM_PROMPT = """أنت مساعد هاتفي للسائق في شركة نقل تونسية.
+تتحدث باللهجة التونسية فقط. ردك دايماً قصير ومحترم: جملة أو جملتين.
+
+دورك:
+- تسأل السائق علاش وقف الكاميون (arrêt non prévu)
+- تسأل عن سبب فتح الباب (ouverture porte suspecte)
+- تسأل عن سبب نقصان الكاربوران (chute carburant)
+- تسجل الإجابة وتطمئن السائق
+
+قواعد:
+- ما تحكيش بالفرنسية. تونسي دارجة فقط
+- إذا السائق ما جاوبش واضح، اعاود اسأل بطريقة أخرى
+- كون مهذب ومحترف
+- ما تطولش في الكلام"""
 
 
 SYSTEM_PROMPT_RAPPORT = """Tu es un analyste de transport logistique.
@@ -98,10 +107,16 @@ génère un rapport structuré en français.
 Le rapport doit contenir exactement ces sections :
 1. RÉSUMÉ : 2-3 phrases résumant la situation
 2. PROBLÈME SIGNALÉ : Le problème ou la situation décrite par le chauffeur
-3. RÉPONSE AGENT : Ce que l'agent IA a proposé ou demandé
-4. STATUT FINAL : Résolu / En attente / Non résolu / Inconnu
-5. MOTS-CLÉS : 3-5 mots-clés séparés par des virgules
-6. RECOMMANDATION : Action suggérée pour le superviseur
+3. CAUSE IDENTIFIÉE : La cause probable selon les propos du chauffeur (panne, ravitaillement, pause, vol de carburant, erreur capteur, etc.)
+4. RÉPONSE AGENT : Ce que l'agent IA a proposé ou demandé
+5. STATUT FINAL : Résolu / En attente / Non résolu / Inconnu
+6. PRÉDICTION NON-CONFORMITÉ : Un pourcentage entre 0% et 100% estimant la probabilité que ce cas soit réellement non-conforme (vol, fraude, violation). Utilise ces critères :
+   - Explication claire et cohérente du chauffeur → faible (10-30%)
+   - Explication vague ou contradictoire → moyen (40-60%)
+   - Refus de répondre, incohérence, ou indices de fraude → élevé (70-100%)
+   Format: XX% - LABEL (où LABEL est: Conforme probable / Suspicion légère / Suspicion modérée / Suspicion élevée / Non-conforme probable)
+7. MOTS-CLÉS : 3-5 mots-clés séparés par des virgules
+8. RECOMMANDATION : Action suggérée pour le superviseur
 
 Réponds UNIQUEMENT avec le rapport structuré, sans introduction."""
 
@@ -130,6 +145,8 @@ check_deps()
 
 import pyaudio
 import sounddevice as sd
+sd.default.latency = 'high'
+sd.default.blocksize = 8192
 import soundfile as sf
 import edge_tts
 import requests as req_http
@@ -161,22 +178,63 @@ def connecter_bdd():
 # ══════════════════════════════════════════════════════════════
 #  GÉNÉRATION DE RAPPORT POST-APPEL (Ollama)
 # ══════════════════════════════════════════════════════════════
+def _extraire_prediction(rapport: str) -> dict:
+    """
+    Extrait le pourcentage et le label de prédiction depuis le rapport.
+    Cherche la ligne 'PRÉDICTION NON-CONFORMITÉ' et parse 'XX% - LABEL'.
+    """
+    import re
+    result = {"prediction_pct": None, "prediction_label": None}
+    if not rapport:
+        return result
+    for line in rapport.splitlines():
+        line_lower = line.lower()
+        if 'prédiction' in line_lower or 'prediction' in line_lower or 'non-conformit' in line_lower:
+            # Chercher un pattern XX% dans la ligne
+            match = re.search(r'(\d{1,3})\s*%', line)
+            if match:
+                result["prediction_pct"] = int(match.group(1))
+            # Chercher le label après le tiret
+            label_match = re.search(r'\d{1,3}\s*%\s*[-–—:]\s*(.+)', line)
+            if label_match:
+                result["prediction_label"] = label_match.group(1).strip()
+            elif result["prediction_pct"] is not None:
+                # Déduire le label du pourcentage
+                pct = result["prediction_pct"]
+                if pct <= 30:
+                    result["prediction_label"] = "Conforme probable"
+                elif pct <= 50:
+                    result["prediction_label"] = "Suspicion légère"
+                elif pct <= 70:
+                    result["prediction_label"] = "Suspicion modérée"
+                elif pct <= 90:
+                    result["prediction_label"] = "Suspicion élevée"
+                else:
+                    result["prediction_label"] = "Non-conforme probable"
+            break
+    return result
+
+
 def _sauvegarder_rapport(session_id: str, rapport: str):
     """
     Sauvegarde le rapport dans conversations_appels via upsert.
+    Extrait et stocke aussi la prédiction de non-conformité.
     """
+    prediction = _extraire_prediction(rapport)
     try:
         conn = connecter_bdd(); cur = conn.cursor()
         cur.execute("""
             INSERT INTO conversations_appels
-                (session_id, rapport, rapport_ts, date_appel)
-            VALUES (%s, %s, NOW(), NOW())
+                (session_id, rapport, prediction_pct, prediction_label)
+            VALUES (%s, %s, %s, %s)
             ON CONFLICT (session_id) DO UPDATE SET
-                rapport    = EXCLUDED.rapport,
-                rapport_ts = NOW()
-        """, (session_id, rapport))
+                rapport          = EXCLUDED.rapport,
+                prediction_pct   = EXCLUDED.prediction_pct,
+                prediction_label = EXCLUDED.prediction_label
+        """, (session_id, rapport, prediction.get("prediction_pct"), prediction.get("prediction_label")))
         conn.commit(); conn.close()
-        print(f"  💾 Rapport sauvegardé → session {session_id}")
+        pct_str = f"{prediction.get('prediction_pct')}%" if prediction.get('prediction_pct') is not None else 'N/A'
+        print(f"  💾 Rapport sauvegardé → session {session_id} (prédiction: {pct_str})")
     except Exception as e:
         print(f"  ❌ _sauvegarder_rapport : {e}")
 
@@ -185,11 +243,47 @@ def generer_rapport_ollama(conversation_texte: str, session_id: str) -> str:
     """
     Génère un rapport structuré en français à partir de la conversation.
     """
-    if not conversation_texte or len(conversation_texte.strip()) < 10:
-        print("  ⚠️ Rapport ignoré — conversation trop courte")
-        return "Conversation vide — rapport impossible."
+    # ── Attendre qu'Ollama soit libre (post-appel) ─────────────
+    time.sleep(8)
 
     print(f"\n  📝 Génération rapport Ollama → session {session_id}...")
+
+    # ── Guard : si conversation_texte est None, récupérer depuis BDD ──
+    if not conversation_texte or not conversation_texte.strip():
+        print(f"  ⚠️ conversation_texte vide/None → tentative récupération BDD...")
+        try:
+            conn = connecter_bdd(); cur = conn.cursor()
+            cur.execute(
+                "SELECT conversation_texte FROM conversations_appels WHERE session_id = %s",
+                (session_id,)
+            )
+            row = cur.fetchone(); conn.close()
+            if row and row[0]:
+                conversation_texte = row[0]
+                print(f"  ✅ Conversation récupérée depuis BDD ({len(conversation_texte)} chars)")
+            else:
+                print(f"  ❌ Aucune conversation en BDD pour session {session_id}")
+                return "Erreur : conversation introuvable en BDD."
+        except Exception as e:
+            print(f"  ❌ Récupération BDD pour rapport : {e}")
+            return "Erreur : BDD inaccessible."
+
+    # ── Vérifier qu'Ollama répond avant d'envoyer le rapport ───
+    try:
+        ping = req_http.get("http://localhost:11434/api/tags", timeout=5)
+        if ping.status_code != 200:
+            print("  ❌ Ollama ne répond pas")
+            return "Erreur : Ollama non disponible."
+    except Exception:
+        print("  ❌ Ollama non démarré")
+        return "Erreur : Ollama non démarré."
+
+    # ── Tronquer la conversation si trop longue ─────────────────
+    MAX_CHARS = 3000
+    if len(conversation_texte) > MAX_CHARS:
+        conversation_texte = conversation_texte[:MAX_CHARS] + "\n[... tronqué ...]"
+        print(f"  ⚠️ Conversation tronquée à {MAX_CHARS} caractères")
+
     try:
         resp = req_http.post(
             OLLAMA_URL,
@@ -200,9 +294,13 @@ def generer_rapport_ollama(conversation_texte: str, session_id: str) -> str:
                     {"role": "user", "content": f"Conversation à analyser :\n\n{conversation_texte}"},
                 ],
                 "stream": False,
-                "options": {"temperature": 0.1, "num_predict": 500},
+                "options": {
+                    "temperature": 0.1,
+                    "num_predict": 300,    # ← réduit de 500 à 300
+                    "num_ctx":     2048,   # ← contexte limité
+                },
             },
-            timeout=60,
+            timeout=180,               # ← augmenté de 60s à 180s
         )
         resp_json = resp.json()
         if "message" not in resp_json:
@@ -219,16 +317,15 @@ def generer_rapport_ollama(conversation_texte: str, session_id: str) -> str:
         _sauvegarder_rapport(session_id, rapport)
         return rapport
 
+    except req_http.exceptions.Timeout:
+        print("  ❌ Ollama timeout (180s) — modèle trop lent, rapport ignoré")
+        return "Erreur : timeout Ollama."
     except req_http.exceptions.ConnectionError:
         print("  ❌ Ollama non démarré — rapport impossible")
         return "Erreur : Ollama non démarré."
-    except req_http.exceptions.Timeout:
-        print("  ❌ Ollama timeout — rapport impossible")
-        return "Erreur : timeout Ollama."
     except Exception as e:
         print(f"  ❌ generer_rapport_ollama : {e}")
         return f"Erreur génération rapport : {e}"
-
 
 def lancer_rapport_en_arriere_plan(agent):
     """
@@ -299,11 +396,25 @@ def init_tables_bdd():
                 camion_id VARCHAR(100),
                 conversation_texte TEXT,
                 fichier_audio VARCHAR(500),
-                duree_s FLOAT DEFAULT 0,
                 nb_tours INT DEFAULT 0,
-                date_appel TIMESTAMP DEFAULT NOW()
+                rapport TEXT,
+                prediction_pct INT,
+                prediction_label VARCHAR(100)
             )
         """)
+        # Ajouter les colonnes prediction si elles n'existent pas (migration)
+        for col, col_type in [
+            ("rapport", "TEXT"),
+            ("prediction_pct", "INT"),
+            ("prediction_label", "VARCHAR(100)"),
+        ]:
+            try:
+                cur.execute(f"""
+                    ALTER TABLE conversations_appels
+                    ADD COLUMN IF NOT EXISTS {col} {col_type}
+                """)
+            except Exception:
+                pass
         cur.execute("""
             CREATE TABLE IF NOT EXISTS messages_appels (
                 id SERIAL PRIMARY KEY,
@@ -534,6 +645,101 @@ def decrocher_adb() -> bool:
         return False
 
 
+def get_caller_number_adb() -> str:
+    """
+    Récupère le numéro de l'appelant via ADB.
+    Essaie 3 méthodes dans l'ordre :
+      1. dumpsys telecom (patterns multiples)
+      2. dumpsys telephony.registry (mCallIncomingNumber)
+      3. Journal d'appels Android (content://call_log)
+    """
+    # ── Méthode 1 : dumpsys telecom ──────────────────────
+    try:
+        out, _ = _run_adb(["adb", "shell", "dumpsys", "telecom"], 8)
+        patterns = [
+            "handle=tel:",
+            "incomingNumber=",
+            "address=tel:",
+            "number=",
+            "Handle{",
+            "mAddress=",
+            "mHandle=tel:",
+        ]
+        lignes_tel = []
+        for ligne in out.splitlines():
+            ligne_s = ligne.strip()
+            for pattern in patterns:
+                if pattern in ligne_s:
+                    # Extraire le numéro après le pattern
+                    idx = ligne_s.index(pattern) + len(pattern)
+                    numero = ""
+                    for c in ligne_s[idx:]:
+                        if c.isdigit() or c == '+':
+                            numero += c
+                        elif numero:
+                            break
+                    if len(numero) >= 8:
+                        print(f"  📞 Numéro appelant (telecom) : {numero}")
+                        return numero
+                    lignes_tel.append(ligne_s[:120])
+
+        # Debug : afficher les lignes avec "tel:" pour diagnostiquer
+        for ligne in out.splitlines():
+            if "tel:" in ligne.lower() or "number" in ligne.lower():
+                print(f"  🔎 telecom debug: {ligne.strip()[:120]}")
+    except Exception as e:
+        print(f"  ⚠️ telecom: {e}")
+
+
+    # ── Méthode 2 : dumpsys telephony.registry ───────────
+    try:
+        out2, _ = _run_adb(["adb", "shell", "dumpsys", "telephony.registry"], 5)
+        for ligne in out2.splitlines():
+            ligne_s = ligne.strip()
+            # Patterns Android pour le numéro entrant
+            for key in ["mCallIncomingNumber", "mIncomingNumber",
+                        "incomingNumber", "mForegroundCallState"]:
+                if key in ligne_s:
+                    # Extraire tout ce qui ressemble à un numéro
+                    import re
+                    nums = re.findall(r'[\+]?\d{8,}', ligne_s)
+                    if nums:
+                        print(f"  📞 Numéro appelant (registry) : {nums[0]}")
+                        return nums[0]
+    except Exception as e:
+        print(f"  ⚠️ registry: {e}")
+
+
+    # ── Méthode 3 : Journal d'appels Android ─────────────
+    #    Le dernier appel entrant (type=1) dans le call log
+    #    ⚠️ Utiliser une seule commande shell (pas _run_adb)
+    try:
+        import re
+        result = subprocess.run(
+            ["adb", "shell",
+             "content query --uri content://call_log/calls "
+             "--projection number:type "
+             "--where \"type=1\" "
+             "--sort 'date DESC'"],
+            capture_output=True, text=True, timeout=5
+        )
+        out3 = result.stdout
+        for ligne in out3.splitlines():
+            nums = re.findall(r'number=([\+\d]+)', ligne)
+            if nums and len(nums[0]) >= 8:
+                num = nums[0]
+                # Ajouter le préfixe +216 si absent
+                if not num.startswith('+') and len(num) == 8:
+                    num = '+216' + num
+                print(f"  📞 Numéro appelant (call_log) : {num}")
+                return num
+    except Exception as e:
+        print(f"  ⚠️ call_log: {e}")
+
+
+    print("  ⚠️ Numéro appelant non détecté (3 méthodes échouées)")
+    return ""
+
 # ══════════════════════════════════════════════════════════════
 #  BLUETOOTH SCO
 # ══════════════════════════════════════════════════════════════
@@ -729,6 +935,14 @@ def sequence_basculement():
 #  TTS — EDGE TTS
 # ══════════════════════════════════════════════════════════════
 _output_device_idx = None
+_enregistrement_actif = True  # Flag pour pausher l'enregistrement pendant TTS
+_enregistreur_global = None   # Référence vers l'EnregistreurWAV actif pour y injecter le TTS
+
+
+def set_enregistreur_global(enreg):
+    """Permet à api_agent.py de définir l'enregistreur global pour l'injection TTS."""
+    global _enregistreur_global
+    _enregistreur_global = enreg
 
 
 def choisir_sortie_audio():
@@ -746,6 +960,7 @@ async def _tts_async(texte, fichier):
 
 
 def parler(texte):
+    global _enregistrement_actif, _enregistreur_global
     if not texte or not texte.strip(): return
     print(f"\n  🔊 Agent : {texte}")
     tmp = tempfile.NamedTemporaryFile(suffix=".mp3", delete=False); tmp_path = tmp.name; tmp.close()
@@ -757,9 +972,34 @@ def parler(texte):
         if sr != target_sr:
             g = gcd(int(sr), target_sr); data = resample_poly(data, target_sr//g, sr//g); sr = target_sr
         data = np.clip(data * TTS_VOLUME_FACTOR, -1.0, 1.0)
+        # Fade-in doux (200ms) pour éviter le début coupé via Bluetooth
+        fade_samples = min(int(sr * 0.2), len(data))
+        if fade_samples > 0:
+            data[:fade_samples] *= np.linspace(0, 1, fade_samples, dtype=np.float32)
         sil_d = np.zeros(int(sr * TTS_SILENCE_DEBUT_S), dtype=np.float32)
         sil_f = np.zeros(int(sr * TTS_SILENCE_FIN_S), dtype=np.float32)
+        
+        # Pausher l'enregistrement du microphone pendant que l'agent parle
+        _enregistrement_actif = False
+
+        # ── Injecter le TTS dans l'enregistreur pour sauvegarder la voix agent ──
+        if _enregistreur_global is not None:
+            # Rééchantillonner vers SAMPLE_RATE si nécessaire pour le WAV
+            tts_data = data.copy()
+            if sr != SAMPLE_RATE:
+                g2 = gcd(int(sr), SAMPLE_RATE)
+                tts_data = resample_poly(tts_data, SAMPLE_RATE // g2, int(sr) // g2)
+            # Silence début
+            sil_d_rec = np.zeros(int(SAMPLE_RATE * TTS_SILENCE_DEBUT_S), dtype=np.float32)
+            # Silence fin
+            sil_f_rec = np.zeros(int(SAMPLE_RATE * TTS_SILENCE_FIN_S), dtype=np.float32)
+            tts_complet = np.concatenate([sil_d_rec, tts_data, sil_f_rec])
+            tts_pcm = float32_vers_pcm16(tts_complet)
+            _enregistreur_global.ajouter(tts_pcm)
+
+        time.sleep(0.8)  # Laisser le CPU "souffler" après Ollama avant de jouer l'audio
         sd.play(np.concatenate([sil_d, data, sil_f]), samplerate=sr, device=_output_device_idx); sd.wait()
+        _enregistrement_actif = True  # Reprendre l'enregistrement
     except Exception as e: print(f"  ❌ TTS: {e}")
     finally:
         try: os.unlink(tmp_path)
@@ -801,8 +1041,12 @@ class AgentOllama:
             t0 = time.time()
             resp = req_http.post(OLLAMA_URL,
                 json={"model": OLLAMA_MODEL, "messages": messages,
-                      "stream": False, "options": {"temperature": 0.2, "num_predict": 100}},
-                timeout=60)
+                      "stream": False, "options": {
+                          "temperature": 0.3,
+                          "num_predict": 80,      # ← augmenté pour des réponses plus complètes
+                          "num_ctx": 2048,         # ← limiter le contexte pour accélérer
+                      }},
+                timeout=30)
             resp_json = resp.json()
             # Robuste : Ollama peut renvoyer {"error":"..."} ou un format inattendu
             if "message" not in resp_json:
@@ -817,7 +1061,7 @@ class AgentOllama:
             print(f"  ⚡ Ollama ({dt}s) : {rep}")
             self.historique.append({"role": "user", "content": texte_asr})
             self.historique.append({"role": "assistant", "content": rep})
-            if len(self.historique) > 20: self.historique = self.historique[-20:]
+            if len(self.historique) > 10: self.historique = self.historique[-10:]
             # Sauvegarder chaque message dans la BDD en temps réel
             self._sauvegarder_message_bdd(self.tour, "chauffeur", texte_asr)
             self._sauvegarder_message_bdd(self.tour, "agent", rep)
@@ -866,18 +1110,16 @@ class AgentOllama:
             cur.execute("""
                 INSERT INTO conversations_appels
                     (session_id, camion_id, conversation_texte, fichier_audio,
-                     duree_s, nb_tours, date_appel)
-                VALUES (%s, %s, %s, %s, %s, %s, NOW())
+                     nb_tours)
+                VALUES (%s, %s, %s, %s, %s)
                 ON CONFLICT (session_id) DO UPDATE SET
                     conversation_texte = EXCLUDED.conversation_texte,
                     fichier_audio = EXCLUDED.fichier_audio,
-                    duree_s = EXCLUDED.duree_s,
                     nb_tours = EXCLUDED.nb_tours
             """, (
                 self.session_id, self.camion_id,
                 conversation_texte,
                 fichier_audio or OUTPUT_WAV,
-                duree_totale,
                 self.tour
             ))
             conn.commit(); conn.close()
@@ -902,18 +1144,41 @@ class AgentOllama:
 #  ENREGISTREUR WAV
 # ══════════════════════════════════════════════════════════════
 class EnregistreurWAV:
-    def __init__(self):
-        self.frames = []; self._lock = threading.Lock()
+    def __init__(self, session_id: str = ""):
+        self.frames = []
+        self._lock = threading.Lock()
+        self.session_id = session_id
     def ajouter(self, pcm):
-        with self._lock: self.frames.append(pcm)
+        if not pcm:
+            return
+        with self._lock:
+            self.frames.append(pcm)
     def sauvegarder(self):
-        if not self.frames: return None
-        with self._lock: audio = b"".join(self.frames)
-        with wave.open(OUTPUT_WAV, "wb") as wf:
+        with self._lock:
+            if not self.frames:
+                print("  ⚠️ Aucun buffer audio capturé, WAV non créé")
+                return None
+            audio = b"".join(self.frames)
+
+        if not audio:
+            print("  ⚠️ Buffer audio vide, WAV non créé")
+            return None
+
+        # Créer un nom de fichier unique par appel
+        from datetime import datetime
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        sid = self.session_id[:8] if self.session_id else "noSession"
+        nom_fichier = f"appel_{ts}_{sid}.wav"
+
+        # Sauvegarder dans le dossier dédié
+        os.makedirs(OUTPUT_WAV_DIR, exist_ok=True)
+        chemin = os.path.join(OUTPUT_WAV_DIR, nom_fichier)
+
+        with wave.open(chemin, "wb") as wf:
             wf.setnchannels(1); wf.setsampwidth(2)
             wf.setframerate(SAMPLE_RATE); wf.writeframes(audio)
-        print(f"  ✅ WAV: {OUTPUT_WAV} ({len(audio)/(SAMPLE_RATE*2):.1f}s)")
-        return OUTPUT_WAV
+        print(f"  ✅ WAV: {chemin} ({len(audio)/(SAMPLE_RATE*2):.1f}s)")
+        return chemin
 
 
 # ══════════════════════════════════════════════════════════════
@@ -1059,6 +1324,86 @@ def identifier_matricule(numero):
     except: return "INCONNU"
 
 
+def _parse_hhmm_num(value):
+    try:
+        n = int(value)
+    except Exception:
+        return None
+    h = n // 100
+    m = n % 100
+    if h < 0 or h > 23 or m < 0 or m > 59:
+        return None
+    return h, m
+
+
+def verifier_fenetre_appel_entrant(numero, marge_min=30):
+    """
+    Accepte l'appel entrant seulement si maintenant est dans:
+      [VOYHRD - marge ; VOYHRF + marge]
+    pour un trajet du jour associé au numéro entrant.
+    """
+    now = datetime.now()
+    num_net = "".join(c for c in (numero or "") if c.isdigit())[-8:]
+    if not num_net:
+        return {"allowed": False, "camion_id": "INCONNU", "reason": "Numéro entrant introuvable"}
+
+    try:
+        conn = connecter_bdd(); cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT "SITECAMION", "VOYHRD", "VOYHRF"
+            FROM voyage_chauffeur
+            WHERE DATE("VOYDTD") = CURRENT_DATE
+              AND REPLACE(REPLACE(COALESCE("SALTEL"::text,''), ' ', ''), '+', '') LIKE %s
+              AND "VOYHRD" IS NOT NULL
+              AND "VOYHRF" IS NOT NULL
+            ORDER BY "VOYHRD" ASC
+            """,
+            (f"%{num_net}",),
+        )
+        rows = cur.fetchall()
+        conn.close()
+    except Exception as e:
+        return {"allowed": False, "camion_id": "INCONNU", "reason": f"Erreur BDD: {e}"}
+
+    if not rows:
+        return {"allowed": False, "camion_id": "INCONNU", "reason": "Aucun trajet du jour pour ce chauffeur"}
+
+    first_window_msg = None
+    for camion_id, voyhrd, voyhrf in rows:
+        dep = _parse_hhmm_num(voyhrd)
+        fin = _parse_hhmm_num(voyhrf)
+        if not dep or not fin:
+            continue
+
+        dep_dt = now.replace(hour=dep[0], minute=dep[1], second=0, microsecond=0)
+        fin_dt = now.replace(hour=fin[0], minute=fin[1], second=0, microsecond=0)
+        if fin_dt < dep_dt:
+            fin_dt += timedelta(days=1)
+
+        window_start = dep_dt - timedelta(minutes=marge_min)
+        window_end = fin_dt + timedelta(minutes=marge_min)
+
+        if first_window_msg is None:
+            first_window_msg = (
+                f"maintenant={now.strftime('%H:%M')} VOYHRD={dep_dt.strftime('%H:%M')} "
+                f"VOYHRF={fin_dt.strftime('%H:%M')} fenêtre=[{window_start.strftime('%H:%M')}→{window_end.strftime('%H:%M')}]"
+            )
+
+        if window_start <= now <= window_end:
+            return {
+                "allowed": True,
+                "camion_id": camion_id or "INCONNU",
+                "reason": f"Appel autorisé: fenêtre=[{window_start.strftime('%H:%M')}→{window_end.strftime('%H:%M')}]",
+            }
+
+    return {
+        "allowed": False,
+        "camion_id": "INCONNU",
+        "reason": f"Appel hors fenêtre VOYHRD/VOYHRF ± {marge_min}min : {first_window_msg or 'fenêtre indisponible'}",
+    }
+
+
 # ══════════════════════════════════════════════════════════════
 #  OUVRIR MICRO
 # ══════════════════════════════════════════════════════════════
@@ -1096,6 +1441,29 @@ def ouvrir_micro():
 
 
 # ══════════════════════════════════════════════════════════════
+#  BOUCLE ENREGISTREMENT CONTINU (parallèle à Whisper)
+# ══════════════════════════════════════════════════════════════
+def boucle_enregistrement_continu(stream, rate, enreg, actif):
+    """Enregistre l'audio en continu dans un thread séparé, indépendamment de Whisper.
+    Respecte le flag _enregistrement_actif pour pauser pendant la TTS de l'agent."""
+    global _enregistrement_actif
+    chunk_size = int(rate * CHUNK_MS / 1000)
+    try:
+        while actif[0]:
+            try:
+                raw = stream.read(chunk_size, exception_on_overflow=False)
+                # Enregistrer seulement si l'enregistrement est actif (pas pendant TTS)
+                if raw and enreg and _enregistrement_actif:
+                    enreg.ajouter(raw)
+            except Exception as e:
+                if actif[0]:
+                    time.sleep(0.01)
+                continue
+    except Exception as e:
+        print(f"  ⚠️ Boucle enregistrement : {e}")
+
+
+# ══════════════════════════════════════════════════════════════
 #  BOUCLE ÉCOUTE VAD + WHISPER
 # ══════════════════════════════════════════════════════════════
 def boucle_ecoute(stream, rate, on_texte, actif, enreg=None):
@@ -1105,6 +1473,7 @@ def boucle_ecoute(stream, rate, on_texte, actif, enreg=None):
     buf, prebuf, rms_seg = [], [], []
     prebuf_max = int(800 / CHUNK_MS)
     sil_count, is_speaking, seg_n, pause = 0, False, 0, [False]
+    read_errors = 0
 
 
     print(f"\n  {'═'*50}\n  🎙️ Écoute Whisper — Ctrl+C pour arrêter\n  {'═'*50}\n")
@@ -1116,10 +1485,15 @@ def boucle_ecoute(stream, rate, on_texte, actif, enreg=None):
             except: pass
             time.sleep(0.01); continue
         try: raw = stream.read(chunk_size, exception_on_overflow=False)
-        except: continue
+        except Exception as e:
+            read_errors += 1
+            if read_errors <= 3 or read_errors % 20 == 0:
+                print(f"\n  ⚠️ Lecture audio impossible ({read_errors}) : {e}")
+            time.sleep(0.01)
+            continue
 
 
-        if enreg: enreg.ajouter(raw)
+        if enreg and _enregistrement_actif: enreg.ajouter(raw)
         rms = get_rms(raw)
 
 
@@ -1220,7 +1594,9 @@ def mode_appel():
 
 
     agent = AgentOllama(camion_id)
-    enreg = EnregistreurWAV()
+    enreg = EnregistreurWAV(agent.session_id)
+    global _enregistreur_global
+    _enregistreur_global = enreg  # Permettre à parler() d'injecter le TTS
 
     # Session tracking (porté de AppelCall.py)
     demarrer_session_appel(agent.session_id, numero, camion_id)
@@ -1228,31 +1604,50 @@ def mode_appel():
     # Surveillance état appel (RINGING → ACTIVE → ENDED) + BDD historique_appels
     surveillant = SurveilleAppel("outgoing", camion_id, agent.session_id)
 
+    # ── Enregistrement dès la sonnerie ─────────────────────────
+    chunk_size_rec = int(rate * CHUNK_MS / 1000)
+    chunks_per_sec = int(1000 / CHUNK_MS)  # ~50 pour 20ms chunks
+    print(f"  🎙️ Enregistrement activé (capture dès la sonnerie)")
+
     # Lancer l'appel
     launched = lancer_appel_adb(numero)
     if launched:
         surveillant.demarrer()
-        # Attendre que l'appel soit décroché
+        # Attendre que l'appel soit décroché — tout en enregistrant
         print(f"  ⏳ Attente décrochage (max {DELAI_AVANT_CLIC_S}s)...")
         t_wait = time.time()
+        chunk_count = 0
         while (time.time() - t_wait) < DELAI_AVANT_CLIC_S:
-            etat = get_call_state_adb()
-            if etat == 2:  # ACTIVE
-                print(f"  ✅ Appel décroché !")
-                break
-            time.sleep(1)
-            sys.stdout.write(f"\r  ⏳ {int(time.time()-t_wait)}s...")
-            sys.stdout.flush()
+            try:
+                raw = stream.read(chunk_size_rec, exception_on_overflow=False)
+                enreg.ajouter(raw)
+            except:
+                time.sleep(0.01)
+            chunk_count += 1
+            if chunk_count % chunks_per_sec == 0:
+                etat = get_call_state_adb()
+                if etat == 2:
+                    print(f"\n  ✅ Appel décroché !")
+                    break
+                sys.stdout.write(f"\r  ⏳ {int(time.time()-t_wait)}s...")
+                sys.stdout.flush()
         print()
     else:
         print("  ⚠️ Échec lancement ADB — tentative continue")
         surveillant.demarrer()
 
 
-    # Basculement audio → DESKTOP-24V22SD avec retry
+    # Basculement audio → DESKTOP-24V22SD avec retry (enregistrement continu)
     for tentative in range(BT_FORCE_RETRIES):
         sequence_basculement()
-        time.sleep(0.5)
+        # Drainer le buffer audio pendant l'attente post-basculement
+        t_drain = time.time()
+        while time.time() - t_drain < 0.5:
+            try:
+                raw = stream.read(chunk_size_rec, exception_on_overflow=False)
+                enreg.ajouter(raw)
+            except:
+                time.sleep(0.01)
         etat = get_call_state_adb()
         if etat == 2:
             print(f"  ✅ Basculement OK (tentative {tentative+1})")
@@ -1298,16 +1693,19 @@ def mode_appel():
 
 
     try:
-        boucle_ecoute(stream, rate, on_texte, actif, enreg)
+        boucle_ecoute(stream, rate, on_texte, actif, enreg=enreg)  # Enregistrement micro ici
     except KeyboardInterrupt:
         print("\n\n  Arrêt manuel...")
     finally:
         actif[0] = False
+        _enregistreur_global = None  # Nettoyer la référence globale
         surveillant.arreter()
         stream.stop_stream(); stream.close(); p.terminate()
         sd.stop(); raccrocher_adb(); liberer_sco()
         # Sauvegarder audio + conversation (texte + BDD)
         fichier_audio = enreg.sauvegarder()
+        if not fichier_audio:
+            print("  ⚠️ Aucun fichier audio généré. Vérifier le périphérique d'entrée et les erreurs de lecture ci-dessus.")
         if agent.historique:
             agent.sauvegarder(fichier_audio=fichier_audio)
             lancer_rapport_en_arriere_plan(agent)
@@ -1350,6 +1748,15 @@ def mode_appel_entrant():
 
             if etat == 1 and etat_prec != 1:
                 print("\n  📲 Appel entrant détecté — sonnerie en cours...")
+                caller_number = get_caller_number_adb()
+                check = verifier_fenetre_appel_entrant(caller_number, marge_min=30)
+                if not check.get("allowed"):
+                    print(f"  ⛔ {check.get('reason')}")
+                    print("  📵 Appel rejeté (hors fenêtre de trajet)")
+                    raccrocher_adb()
+                    etat_prec = etat
+                    continue
+                print(f"  ✅ {check.get('reason')}")
                 time.sleep(8)
 
                 ok = decrocher_adb()
@@ -1371,20 +1778,33 @@ def mode_appel_entrant():
             elif etat == 2 and etat_prec != 2:
                 print("\n  🎙️ Traitement appel entrant...")
 
+                caller_number = get_caller_number_adb()
+                check = verifier_fenetre_appel_entrant(caller_number, marge_min=30)
+                camion_id = check.get("camion_id") if check.get("allowed") else "ENTRANT"
+                agent = AgentOllama(camion_id)
+                enreg = EnregistreurWAV(agent.session_id)
+                global _enregistreur_global
+                _enregistreur_global = enreg  # Permettre à parler() d'injecter le TTS
+                surv = SurveilleAppel("incoming", camion_id, agent.session_id)
+
+                demarrer_session_appel(agent.session_id, caller_number or "entrant", camion_id)
+                surv.demarrer()
+
+                # Basculement BT avec enregistrement continu
+                chunk_size_rec = int(rate * CHUNK_MS / 1000)
+                print(f"  🎙️ Enregistrement activé (appel entrant — capture dès maintenant)")
                 for tentative in range(BT_FORCE_RETRIES):
                     sequence_basculement()
-                    time.sleep(0.5)
+                    t_drain = time.time()
+                    while time.time() - t_drain < 0.5:
+                        try:
+                            raw = stream.read(chunk_size_rec, exception_on_overflow=False)
+                            enreg.ajouter(raw)
+                        except:
+                            time.sleep(0.01)
                     if get_call_state_adb() == 2:
                         print(f"  ✅ Basculement OK ({tentative+1})")
                         break
-
-                camion_id = "ENTRANT"
-                agent = AgentOllama(camion_id)
-                enreg = EnregistreurWAV()
-                surv = SurveilleAppel("incoming", camion_id, agent.session_id)
-
-                demarrer_session_appel(agent.session_id, "entrant", camion_id)
-                surv.demarrer()
 
                 actif = [True]
                 threading.Thread(
@@ -1407,16 +1827,19 @@ def mode_appel_entrant():
                         parler(rep)
 
                 try:
-                    boucle_ecoute(stream, rate, on_texte, actif, enreg)
+                    boucle_ecoute(stream, rate, on_texte, actif, enreg=enreg)  # Enregistrement micro ici
                 except KeyboardInterrupt:
                     actif_global[0] = False
 
                 actif[0] = False
+                _enregistreur_global = None  # Nettoyer la référence globale
                 surv.arreter()
                 sd.stop()
                 liberer_sco()
 
                 fichier_audio = enreg.sauvegarder()
+                if not fichier_audio:
+                    print("  ⚠️ Aucun fichier audio généré pour l'appel entrant.")
                 if agent.historique:
                     agent.sauvegarder(fichier_audio=fichier_audio)
                     lancer_rapport_en_arriere_plan(agent)

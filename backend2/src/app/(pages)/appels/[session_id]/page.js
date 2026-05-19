@@ -510,42 +510,95 @@ export default function SessionPage() {
             }}>
               <div style={s.cardTitle}>🎯 Prédiction Non-Conformité</div>
               {predictionPct != null ? (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 20 }}>
-                  {/* Gauge SVG */}
-                  <div style={{ position: 'relative', width: gaugeSize, height: gaugeSize / 2 + 20, flexShrink: 0 }}>
-                    <svg width={gaugeSize} height={gaugeSize / 2 + 10} viewBox={`0 0 ${gaugeSize} ${gaugeSize / 2 + 10}`}>
-                      {/* Background arc */}
-                      <path
-                        d={`M ${gaugeStroke / 2} ${gaugeSize / 2} A ${gaugeRadius} ${gaugeRadius} 0 0 1 ${gaugeSize - gaugeStroke / 2} ${gaugeSize / 2}`}
-                        fill="none" stroke="#e2e8f0" strokeWidth={gaugeStroke} strokeLinecap="round"
-                      />
-                      {/* Filled arc */}
-                      <path
-                        d={`M ${gaugeStroke / 2} ${gaugeSize / 2} A ${gaugeRadius} ${gaugeRadius} 0 0 1 ${gaugeSize - gaugeStroke / 2} ${gaugeSize / 2}`}
-                        fill="none" stroke={predColor.fill} strokeWidth={gaugeStroke} strokeLinecap="round"
-                        strokeDasharray={`${gaugeDash} ${gaugeCirc}`}
-                        style={{ animation: 'gaugeAnim 1.2s ease-out', transition: 'stroke-dasharray 0.8s ease' }}
-                      />
-                    </svg>
-                    {/* Percentage text */}
-                    <div style={{
-                      position: 'absolute', bottom: 0, left: '50%', transform: 'translateX(-50%)',
-                      fontSize: 32, fontWeight: 800, color: predColor.fill, letterSpacing: '-0.02em',
-                    }}>
-                      {gaugePct}%
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 20 }}>
+                    {/* Gauge SVG */}
+                    <div style={{ position: 'relative', width: gaugeSize, height: gaugeSize / 2 + 20, flexShrink: 0 }}>
+                      <svg width={gaugeSize} height={gaugeSize / 2 + 10} viewBox={`0 0 ${gaugeSize} ${gaugeSize / 2 + 10}`}>
+                        {/* Background arc */}
+                        <path
+                          d={`M ${gaugeStroke / 2} ${gaugeSize / 2} A ${gaugeRadius} ${gaugeRadius} 0 0 1 ${gaugeSize - gaugeStroke / 2} ${gaugeSize / 2}`}
+                          fill="none" stroke="#e2e8f0" strokeWidth={gaugeStroke} strokeLinecap="round"
+                        />
+                        {/* Filled arc */}
+                        <path
+                          d={`M ${gaugeStroke / 2} ${gaugeSize / 2} A ${gaugeRadius} ${gaugeRadius} 0 0 1 ${gaugeSize - gaugeStroke / 2} ${gaugeSize / 2}`}
+                          fill="none" stroke={predColor.fill} strokeWidth={gaugeStroke} strokeLinecap="round"
+                          strokeDasharray={`${gaugeDash} ${gaugeCirc}`}
+                          style={{ animation: 'gaugeAnim 1.2s ease-out', transition: 'stroke-dasharray 0.8s ease' }}
+                        />
+                      </svg>
+                      {/* Percentage text */}
+                      <div style={{
+                        position: 'absolute', bottom: 0, left: '50%', transform: 'translateX(-50%)',
+                        fontSize: 32, fontWeight: 800, color: predColor.fill, letterSpacing: '-0.02em',
+                      }}>
+                        {gaugePct}%
+                      </div>
+                    </div>
+                    {/* Label */}
+                    <div style={{ flex: 1 }}>
+                      <div style={{
+                        fontSize: 15, fontWeight: 700, color: predColor.text, marginBottom: 6,
+                      }}>
+                        {predictionLabel || 'Analyse en cours'}
+                      </div>
+                      <div style={{ fontSize: 12, color: '#64748b', lineHeight: 1.5 }}>
+                        Probabilité que ce cas soit réellement non-conforme, basée sur l'analyse IA de la conversation.
+                      </div>
                     </div>
                   </div>
-                  {/* Label */}
-                  <div style={{ flex: 1 }}>
-                    <div style={{
-                      fontSize: 15, fontWeight: 700, color: predColor.text, marginBottom: 6,
-                    }}>
-                      {predictionLabel || 'Analyse en cours'}
-                    </div>
-                    <div style={{ fontSize: 12, color: '#64748b', lineHeight: 1.5 }}>
-                      Probabilité que ce cas soit réellement non-conforme, basée sur l'analyse IA de la conversation.
-                    </div>
-                  </div>
+
+                  {/* ── Cause identifiée (from rapport) ── */}
+                  {(() => {
+                    const causeSection = rapportSections.find(sec =>
+                      sec.title.toLowerCase().includes('cause')
+                    )
+                    const problemeSection = rapportSections.find(sec =>
+                      sec.title.toLowerCase().includes('problème') || sec.title.toLowerCase().includes('probleme')
+                    )
+                    if (!causeSection && !problemeSection) return null
+                    return (
+                      <div style={{
+                        marginTop: 14,
+                        padding: '10px 14px',
+                        background: 'rgba(255,255,255,0.65)',
+                        borderRadius: 12,
+                        border: `1px solid ${predColor.fill}18`,
+                      }}>
+                        {problemeSection && (
+                          <div style={{ marginBottom: causeSection ? 8 : 0 }}>
+                            <div style={{
+                              fontSize: 10, fontWeight: 700, textTransform: 'uppercase',
+                              letterSpacing: '0.08em', color: '#7a8194', marginBottom: 3,
+                            }}>
+                              ⚠️ Problème signalé
+                            </div>
+                            <div style={{
+                              fontSize: 13, fontWeight: 600, color: '#1b1f2a', lineHeight: 1.4,
+                            }}>
+                              {problemeSection.content}
+                            </div>
+                          </div>
+                        )}
+                        {causeSection && (
+                          <div>
+                            <div style={{
+                              fontSize: 10, fontWeight: 700, textTransform: 'uppercase',
+                              letterSpacing: '0.08em', color: '#7a8194', marginBottom: 3,
+                            }}>
+                              🔍 Cause identifiée
+                            </div>
+                            <div style={{
+                              fontSize: 13, fontWeight: 600, color: predColor.text, lineHeight: 1.4,
+                            }}>
+                              {causeSection.content}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })()}
                 </div>
               ) : (
                 <div style={s.empty}>Prédiction non disponible — le rapport n'a pas encore été généré.</div>
