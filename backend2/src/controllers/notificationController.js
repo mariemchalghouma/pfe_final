@@ -275,6 +275,7 @@ export const getNotifications = async (userId) => {
     const ouvertureResult = await pool.query(
       `
       SELECT
+          o.etat AS db_etat,
           o.date_ouverture,
           o.date_fermeture,
           o.assetname,
@@ -303,9 +304,12 @@ export const getNotifications = async (userId) => {
     ouvertureResult.rows.forEach((row) => {
       const dureeMin = Number(row.duree_minutes) || 0;
       const isPlanned = row.voycle !== null;
+      const calculatedStatut = isPlanned && dureeMin <= DUREE_OUVERTURE_MAX ? "conforme" : "non_conforme";
+      const statut = row.db_etat || calculatedStatut;
 
-      // Ouverture suspecte si non planifiée OU durée > max
-      if (!isPlanned || dureeMin > DUREE_OUVERTURE_MAX) {
+      // La notification Porte dépend uniquement de l'ouverture elle-même
+      // et de son statut, pas d'un appel associé.
+      if (statut === "non_conforme") {
         const doorDate = new Date(row.date_ouverture);
         const timeStr = doorDate.toLocaleTimeString("fr-FR", {
           hour: "2-digit",
@@ -320,15 +324,19 @@ export const getNotifications = async (userId) => {
         generated.push({
           id: `door-${row.camion}-${row.date_ouverture}-${row.date_fermeture}`,
           type: "Porte",
-          title: "Ouverture porte suspecte",
-          message: `${row.camion} ouverture ${dureeMin}min à ${row.adress || "localisation inconnue"}`,
+          title: "Ouverture porte non conforme",
+          message: `${row.camion} ouverture non conforme${dureeMin ? ` (${dureeMin}min)` : ""} à ${row.adress || "localisation inconnue"}`,
           time: timeStr,
           date: dateStr,
           timestamp: doorDate,
           icon: "FiUnlock",
-          color: "text-amber-600",
-          bgColor: "bg-amber-50",
-          metadata: {},
+          color: "text-red-600",
+          bgColor: "bg-red-50",
+          metadata: {
+            dbEtat: row.db_etat || null,
+            statut,
+            source: "ouverture_porte",
+          },
         });
       }
     });
@@ -371,7 +379,6 @@ export const getNotifications = async (userId) => {
           day: "2-digit",
         });
 
-        // Déterminer l'icône, couleur et message selon le type_nc
         let icon, color, bgColor, title, message;
         const camion = row.camion_id || "Camion";
         const chauffeur = row.nom_chauffeur || "";
@@ -430,7 +437,6 @@ export const getNotifications = async (userId) => {
             break;
         }
 
-        // Badge de statut
         if (statut === "En cours") {
           title = `🔴 ${title} (en cours)`;
         }
