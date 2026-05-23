@@ -349,11 +349,16 @@ const GestionPoi = () => {
   };
 
   const handleDeleteGroup = async (groupId) => {
-    if (window.confirm("Voulez-vous vraiment supprimer ce groupe ?")) {
+    if (
+      window.confirm(
+        "Voulez-vous vraiment supprimer ce groupe ? Tous les POI rattachés seront supprimés.",
+      )
+    ) {
       try {
         await groupsAPI.deleteGroup(groupId);
         setSuccessMessage("Groupe supprimé avec succès.");
         await fetchGroups();
+        await fetchPois();
       } catch (error) {
         console.error("Failed to delete group:", error);
       }

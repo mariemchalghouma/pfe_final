@@ -7,6 +7,7 @@ import { getConversation, audioUrl, validerConversation } from '../../../../lib/
 import MapModal from '@/components/map/MapModal'
 
 const STORAGE_KEY = 'appels_sessions_lues'
+const VALIDATION_STORAGE_KEY = 'appels_sessions_valides'
 
 // ── Helper: color from prediction percentage ──
 function getPredictionColor(pct) {
@@ -66,6 +67,10 @@ export default function SessionPage() {
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [isMarkedRead, setIsMarkedRead] = useState(false)
+  const [isValidating, setIsValidating] = useState(false)
+  const [isValidated, setIsValidated] = useState(false)
+  const [validationNotice, setValidationNotice] = useState('')
+  const [validationNoticeType, setValidationNoticeType] = useState('success')
   const [fuelData, setFuelData] = useState(null)
   const [isMapOpen, setIsMapOpen] = useState(false)
   const [mapPositions, setMapPositions] = useState([])
@@ -77,6 +82,11 @@ export default function SessionPage() {
     try {
       const lues = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]')
       if (lues.includes(session_id)) setIsMarkedRead(true)
+      const valides = JSON.parse(localStorage.getItem(VALIDATION_STORAGE_KEY) || '[]')
+      if (valides.includes(session_id)) {
+        setIsValidated(true)
+        setValidationNotice('')
+      }
     } catch { }
   }, [session_id])
 
@@ -95,6 +105,20 @@ export default function SessionPage() {
     }
     load()
   }, [session_id])
+
+  useEffect(() => {
+    const status = (data?.conversation?.validation_status || '').toString().toLowerCase().trim()
+    const isOk = status === 'valide' || data?.conversation?.validation_conforme === true
+    if (isOk) {
+      setIsValidated(true)
+      setValidationNotice('')
+      try {
+        const valides = new Set(JSON.parse(localStorage.getItem(VALIDATION_STORAGE_KEY) || '[]'))
+        valides.add(session_id)
+        localStorage.setItem(VALIDATION_STORAGE_KEY, JSON.stringify([...valides]))
+      } catch { }
+    }
+  }, [data?.conversation?.validation_status, data?.conversation?.validation_conforme])
 
   const s = {
     page: {
@@ -137,11 +161,34 @@ export default function SessionPage() {
     detailRow: { display: 'flex', justifyContent: 'space-between', gap: 12, fontSize: 13, color: '#5a6272' },
     detailValue: { color: '#1b1f2a', fontWeight: 600, textAlign: 'right' },
     empty: { fontSize: 13, color: '#7a8194' },
-    validationButton: {
-      border: '1px solid #bfe6d1', background: '#ecfdf3', color: '#0f7b43', padding: '10px 14px',
-      borderRadius: 12, fontSize: 14, fontWeight: 600, cursor: 'pointer',
+    actionButton: {
+      border: '1px solid #0f7b43',
+      background: '#0f7b43',
+      color: '#fff',
+      padding: '10px 18px',
+      borderRadius: 12,
+      fontSize: 14,
+      fontWeight: 700,
+      cursor: 'pointer',
+      boxShadow: '0 6px 16px rgba(15,123,67,0.25)',
+      transition: 'transform 0.2s ease, box-shadow 0.2s ease',
+    },
+    actionButtonDone: {
+      border: '1px solid #a7f3d0',
+      background: '#ecfdf5',
+      color: '#065f46',
+      boxShadow: 'none',
+      cursor: 'default',
     },
     validationMessage: { marginTop: 10, fontSize: 12, color: '#5a6272' },
+    notice: {
+      marginBottom: 16,
+      padding: '12px 16px',
+      borderRadius: 12,
+      fontSize: 13,
+      fontWeight: 600,
+      border: '1px solid transparent',
+    },
     modalOverlay: {
       position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.35)',
       display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50, padding: 16,
@@ -326,7 +373,7 @@ export default function SessionPage() {
     return conv.fichier_audio.split('\\').pop()
   }, [conv.fichier_audio])
 
-  const handleMarquerLue = async () => {
+  const handleMarquerLue = () => {
     if (!session_id) return
     // 1. localStorage — feedback visuel instantané
     try {
@@ -335,12 +382,38 @@ export default function SessionPage() {
       localStorage.setItem(STORAGE_KEY, JSON.stringify([...lues]))
       setIsMarkedRead(true)
     } catch { }
-    // 2. API — mettre etat='conforme' dans les tables source (BDD)
+  }
+
+  const handleValider = async () => {
+    if (!session_id || isValidating) return
+    setIsValidating(true)
+    setIsValidated(false)
+    setValidationNotice('')
+    setValidationNoticeType('success')
     try {
       const res = await validerConversation(session_id)
-      console.log('Validation BDD:', res)
+      if (res?.ok === false) {
+        setValidationNoticeType('error')
+        setValidationNotice(res?.error || 'Validation échouée.')
+      } else {
+        const updatedStops = Number(res?.updated?.voyage_tracking_stops || 0)
+        const updatedPortes = Number(res?.updated?.voyagetracking_port_ouvert || 0)
+        const updatedTotal = updatedStops + updatedPortes
+        setIsValidated(true)
+        setValidationNoticeType('success')
+        setValidationNotice('Validation réussie.')
+        try {
+          const valides = new Set(JSON.parse(localStorage.getItem(VALIDATION_STORAGE_KEY) || '[]'))
+          valides.add(session_id)
+          localStorage.setItem(VALIDATION_STORAGE_KEY, JSON.stringify([...valides]))
+        } catch { }
+      }
     } catch (e) {
       console.error('Erreur validation BDD:', e)
+      setValidationNoticeType('error')
+      setValidationNotice('Erreur validation BDD.')
+    } finally {
+      setIsValidating(false)
     }
   }
 
@@ -366,6 +439,19 @@ export default function SessionPage() {
         .rapport-section { animation: fadeIn 0.4s ease both; }
       `}</style>
 
+        {validationNotice ? (
+          <div
+            style={{
+              ...s.notice,
+              background: validationNoticeType === 'error' ? '#fef2f2' : '#ecfdf5',
+              color: validationNoticeType === 'error' ? '#b91c1c' : '#065f46',
+              borderColor: validationNoticeType === 'error' ? '#fecaca' : '#a7f3d0',
+            }}
+          >
+            {validationNotice}
+          </div>
+        ) : null}
+
 
         <div style={s.header}>
           <button onClick={() => router.back()} style={s.backButton}>← Retour</button>
@@ -381,28 +467,30 @@ export default function SessionPage() {
               <span style={s.tag}>{durationLabel}</span>
               <span style={{ ...s.tag, ...s.tagAlt }}>{conv.nb_tours ?? 0} tours</span>
             </div>
-            {!isMarkedRead ? (
-              <button type="button" onClick={handleMarquerLue}
-                style={{
-                  border: 'none',
-                  background: 'linear-gradient(135deg, #10b981, #059669)',
-                  color: '#fff',
-                  padding: '10px 20px',
-                  borderRadius: 12,
-                  fontSize: 14,
-                  fontWeight: 700,
-                  cursor: 'pointer',
-                  boxShadow: '0 4px 14px rgba(16,185,129,0.3)',
-                  transition: 'transform 0.2s ease, box-shadow 0.2s ease',
-                }}>
-                ✅ Marquer comme lue
-              </button>
-            ) : (
-              <span style={{
-                background: '#ecfdf5', color: '#065f46', padding: '10px 20px',
-                borderRadius: 12, fontSize: 14, fontWeight: 700, border: '1px solid #a7f3d0',
-              }}>✅ Marquée comme lue</span>
-            )}
+            <button
+              type="button"
+              onClick={isMarkedRead ? undefined : handleMarquerLue}
+              disabled={isMarkedRead}
+              style={{
+                ...s.actionButton,
+                ...(isMarkedRead ? s.actionButtonDone : null),
+                opacity: isMarkedRead ? 0.85 : 1,
+              }}
+            >
+              {isMarkedRead ? '✅ Marquée comme lue' : 'Marquer comme lue'}
+            </button>
+            <button
+              type="button"
+              onClick={handleValider}
+              disabled={isValidating || isValidated}
+              style={{
+                ...s.actionButton,
+                ...(isValidating || isValidated ? s.actionButtonDone : null),
+                opacity: (isValidating || isValidated) ? 0.85 : 1,
+              }}
+            >
+              {isValidating ? 'Validation...' : (isValidated ? '✅ Validé' : 'Valider')}
+            </button>
           </div>
         </div>
 

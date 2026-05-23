@@ -526,22 +526,22 @@ export const getNiveauCarburant = async (
     const start = dateStart || date || new Date().toISOString().split("T")[0];
     const end = dateEnd || date || start;
 
-    /* ── Points GPS + niveau réel (table mesure) ── */
-    const mesureQuery = `
+    /* ── Points GPS + niveau réel (table niveau_carburant) ── */
+    const niveauQuery = `
       SELECT DISTINCT ON (date_trunc('minute', m.gps_dt))
         m.gps_dt,
         m.fuel,
         m.latitude,
         m.longitude,
         m.con
-      FROM mesures m
+      FROM niveau_carburant m
       WHERE UPPER(TRIM(m.camion::text)) = UPPER(TRIM($1))
         AND DATE(m.gps_dt) >= $2
         AND DATE(m.gps_dt) <= $3
         AND m.latitude IS NOT NULL AND m.longitude IS NOT NULL
       ORDER BY date_trunc('minute', m.gps_dt), m.gps_dt ASC
     `;
-    const mesureResult = await pool.query(mesureQuery, [camion, start, end]);
+    const niveauResult = await pool.query(niveauQuery, [camion, start, end]);
     /* ── Ravitaillements (pour repérer les pleins sur le graphe) ── */
     const ravitQuery = `
       SELECT
@@ -562,9 +562,9 @@ export const getNiveauCarburant = async (
 
     /* ── Construire les données de niveau (fuel réel) ── */
     const capacite = toNum(ravitResult.rows[0]?.capacite) || 300;
-    const mesurePoints = mesureResult.rows;
+    const niveauPoints = niveauResult.rows;
 
-    const niveauData = mesurePoints.map((pt) => {
+    const niveauData = niveauPoints.map((pt) => {
       const ts = new Date(pt.gps_dt);
       const heure = `${String(ts.getHours()).padStart(2, "0")}:${String(ts.getMinutes()).padStart(2, "0")}`;
       const fuel = toNum(pt.fuel) || 0;
@@ -578,7 +578,7 @@ export const getNiveauCarburant = async (
         con: toNum(pt.con),
         conRaw: pt.con,
         etatMoteur,
-        speed: 0, // pas de vitesse dans mesure – on garde la clé pour le front
+        speed: 0, // pas de vitesse dans niveau_carburant – on garde la clé pour le front
         timestamp: pt.gps_dt,
         ravitaillement: ravitHours.has(ts.getHours()),
       };

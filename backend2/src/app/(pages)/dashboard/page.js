@@ -8,8 +8,19 @@ import {
   FiCheckCircle,
   FiDroplet,
   FiMapPin,
+  FiPhoneCall,
+  FiPlus,
 } from "react-icons/fi";
 import MapModal from "@/components/map/MapModal";
+import { useAuth } from "@/context/AuthContext";
+import {
+  Area,
+  AreaChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 import {
   arretsAPI,
   camionsAPI,
@@ -44,7 +55,11 @@ const normalizeText = (value) =>
     .trim()
     .toLowerCase();
 
-const formatNumber = (value) => new Intl.NumberFormat("fr-FR").format(value);
+const formatNumber = (value, fallback = "—") => {
+  const num = Number(value);
+  if (!Number.isFinite(num)) return fallback;
+  return new Intl.NumberFormat("fr-FR").format(num);
+};
 
 const formatDateTime = (value) => {
   if (!value) return "—";
@@ -113,7 +128,67 @@ const todayCardConfigs = [
   },
 ];
 
+const CHECKLIST_STORAGE_KEY = "dashboard_checklist_tasks";
+
+const defaultChecklistItems = [
+  {
+    id: "calls",
+    title: "Vérifier les appels du jour",
+    description: "Sessions à risque et actions prioritaires",
+    status: "done",
+    icon: FiPhoneCall,
+  },
+  {
+    id: "fuel",
+    title: "Valider anomalies carburant",
+    description: "Comparer tickets et capteurs",
+    status: "attention",
+    icon: FiAlertTriangle,
+  },
+  {
+    id: "poi",
+    title: "Mettre à jour les POI",
+    description: "3 points critiques à confirmer",
+    status: "pending",
+    icon: FiMapPin,
+  },
+  {
+    id: "reclamations",
+    title: "Traiter les réclamations",
+    description: "Vérifier les dossiers ouverts",
+    status: "pending",
+    icon: FiDroplet,
+  },
+];
+
+const checklistStyles = {
+  done: {
+    badge: "bg-emerald-100 text-emerald-700",
+    iconWrap: "bg-emerald-50",
+    iconColor: "text-emerald-500",
+  },
+  attention: {
+    badge: "bg-amber-100 text-amber-700",
+    iconWrap: "bg-amber-50",
+    iconColor: "text-amber-600",
+  },
+  pending: {
+    badge: "bg-sky-100 text-sky-700",
+    iconWrap: "bg-sky-50",
+    iconColor: "text-sky-600",
+  },
+};
+
+const statusLabels = {
+  done: "Fait",
+  attention: "Urgent",
+  pending: "En attente",
+};
+
+const statusOrder = ["pending", "attention", "done"];
+
 const Dashboard = () => {
+  const { user } = useAuth();
   const [period, setPeriod] = useState("week");
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -130,6 +205,18 @@ const Dashboard = () => {
   const [poiHistory, setPoiHistory] = useState([]);
   const [notifications, setNotifications] = useState([]);
   const [todayStats, setTodayStats] = useState(null);
+  const [checklist, setChecklist] = useState(defaultChecklistItems);
+  const [newTaskTitle, setNewTaskTitle] = useState("");
+  const [newTaskStatus, setNewTaskStatus] = useState("pending");
+  const [checklistNotice, setChecklistNotice] = useState("");
+  const [checklistNoticeType, setChecklistNoticeType] = useState("success");
+
+  const userDisplayName = useMemo(() => {
+    const firstName = user?.first_name || "";
+    const lastName = user?.last_name || "";
+    const full = `${firstName} ${lastName}`.trim();
+    return full || user?.name || user?.identifiant || "Utilisateur";
+  }, [user?.first_name, user?.last_name, user?.name, user?.identifiant]);
 
   const loadDashboard = useCallback(
     async (signal) => {
@@ -278,6 +365,38 @@ const Dashboard = () => {
   }, [loadDashboard]);
 
   useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const stored = JSON.parse(
+        localStorage.getItem(CHECKLIST_STORAGE_KEY) || "[]",
+      );
+      if (Array.isArray(stored) && stored.length > 0) {
+        setChecklist(stored);
+      }
+    } catch {
+      // ignore invalid storage
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      localStorage.setItem(
+        CHECKLIST_STORAGE_KEY,
+        JSON.stringify(checklist),
+      );
+    } catch {
+      // ignore storage errors
+    }
+  }, [checklist]);
+
+  useEffect(() => {
+    if (!checklistNotice) return undefined;
+    const timer = window.setTimeout(() => setChecklistNotice(""), 2500);
+    return () => window.clearTimeout(timer);
+  }, [checklistNotice]);
+
+  useEffect(() => {
     if (typeof window === "undefined") return undefined;
 
     const timer = window.setInterval(() => {
@@ -304,6 +423,43 @@ const Dashboard = () => {
     return () => clearTimeout(timer);
   }, []);
 
+  const handleAddTask = (event) => {
+    event?.preventDefault?.();
+    const title = newTaskTitle.trim();
+    if (!title) {
+      setChecklistNoticeType("error");
+      setChecklistNotice("Veuillez saisir un titre.");
+      return;
+    }
+    const nextTask = {
+      id: `task_${Date.now()}`,
+      title,
+      description: "Tâche personnalisée",
+      status: newTaskStatus,
+      icon: FiCheckCircle,
+    };
+    setChecklist((current) => [nextTask, ...current]);
+    setNewTaskTitle("");
+    setNewTaskStatus("pending");
+    setChecklistNoticeType("success");
+    setChecklistNotice("Tâche ajoutée.");
+  };
+
+  const handleCycleStatus = (itemId) => {
+    setChecklist((current) =>
+      current.map((item) => {
+        if (item.id !== itemId) return item;
+        const currentIndex = statusOrder.indexOf(item.status);
+        const nextStatus =
+          statusOrder[(currentIndex + 1) % statusOrder.length] || "pending";
+        const statusLabel = statusLabels[nextStatus] || "En attente";
+        setChecklistNoticeType(nextStatus === "done" ? "success" : "info");
+        setChecklistNotice(`Statut mis à jour : ${statusLabel}.`);
+        return { ...item, status: nextStatus };
+      }),
+    );
+  };
+
   const mapPositions = useMemo(
     () =>
       camions
@@ -319,6 +475,57 @@ const Dashboard = () => {
     [camions],
   );
 
+  const trendMeta = useMemo(() => getRangeForPeriod(period), [period]);
+
+  const trendSeries = useMemo(() => {
+    const counts = new Map();
+    arrets.forEach((row) => {
+      const status = String(row.status || row.etat || "").toLowerCase();
+      if (status !== "non_conforme") return;
+      const dateKey = formatDateKey(row.beginstoptime || row.date || row.endstoptime);
+      if (!dateKey) return;
+      counts.set(dateKey, (counts.get(dateKey) || 0) + 1);
+    });
+
+    const startDate = new Date(trendMeta.start);
+    const endDate = new Date(trendMeta.end);
+    if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) return [];
+
+    const series = [];
+    for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
+      const key = toDateInput(d);
+      series.push({
+        date: key,
+        value: counts.get(key) || 0,
+      });
+    }
+    return series;
+  }, [arrets, trendMeta.end, trendMeta.start]);
+
+  const trendTotal = useMemo(
+    () => trendSeries.reduce((sum, row) => sum + row.value, 0),
+    [trendSeries],
+  );
+  const trendPeak = useMemo(
+    () => trendSeries.reduce((max, row) => Math.max(max, row.value), 0),
+    [trendSeries],
+  );
+  const trendLatest = trendSeries.length
+    ? trendSeries[trendSeries.length - 1].value
+    : 0;
+
+  const checklistProgress = useMemo(() => {
+    const total = checklist.length;
+    const done = checklist.filter((item) => item.status === "done").length;
+    const pct = total ? Math.round((done / total) * 100) : 0;
+    return { total, done, pct };
+  }, [checklist]);
+
+  const lastUpdatedLabel = useMemo(() => {
+    if (!lastUpdated) return "—";
+    return formatDateTime(lastUpdated);
+  }, [lastUpdated]);
+
 
 
 
@@ -331,7 +538,44 @@ const Dashboard = () => {
 
   return (
     <>
-      <div className="mx-auto max-w-[1540px] space-y-8 px-6 py-8 xl:px-10">
+      <style jsx global>{`
+        @import url('https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&display=swap');
+        .dashboard-surface {
+          --dash-ink: #0f172a;
+          --dash-muted: #64748b;
+          --dash-accent: #f97316;
+          --dash-accent-2: #10b981;
+          min-height: 100vh;
+          background:
+            radial-gradient(900px 420px at 95% -10%, rgba(249,115,22,0.18), transparent 60%),
+            radial-gradient(700px 360px at -10% 0%, rgba(16,185,129,0.14), transparent 60%),
+            #f7f8fb;
+          font-family: 'Sora', 'Space Grotesk', sans-serif;
+        }
+        .dashboard-surface .dash-fade {
+          animation: dashFade 0.45s ease both;
+        }
+        @keyframes dashFade {
+          from { opacity: 0; transform: translateY(8px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+      `}</style>
+      <div className="dashboard-surface">
+        <div className="mx-auto max-w-[1540px] space-y-8 px-6 py-8 xl:px-10">
+        {/* ═══════════════════════════════════════════════
+            HEADER: USER + STATUS
+            ═══════════════════════════════════════════════ */}
+        <section className="dash-fade flex flex-wrap items-center justify-between gap-4 rounded-[2rem] border border-slate-200 bg-white/80 px-6 py-5 shadow-sm backdrop-blur">
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-400">
+              Tableau de bord
+            </p>
+            <h1 className="mt-2 text-[22px] font-bold tracking-tight text-slate-900">
+              Bonjour, {userDisplayName}
+            </h1>
+          </div>
+        </section>
+
         {/* ═══════════════════════════════════════════════
             SECTION 1: TODAY'S KPI CARDS (6 cards row)
             ═══════════════════════════════════════════════ */}
@@ -362,6 +606,206 @@ const Dashboard = () => {
               </div>
             );
           })}
+        </section>
+
+        {/* ═══════════════════════════════════════════════
+            SECTION 1B: QUICK ACTIONS + MINIMAL TREND
+            ═══════════════════════════════════════════════ */}
+        <section className="grid grid-cols-1 gap-6 xl:grid-cols-[1fr_2fr]">
+          <div className="dash-fade relative overflow-hidden rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
+            <div className="pointer-events-none absolute -right-20 -top-16 h-48 w-48 rounded-full bg-emerald-200/40 blur-3xl" />
+            <div className="pointer-events-none absolute -bottom-24 left-0 h-52 w-52 rounded-full bg-orange-200/40 blur-3xl" />
+            <div className="relative">
+              <div className="flex flex-wrap items-start justify-between gap-4">
+                <div>
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">
+                    Checklist
+                  </p>
+                  <h2 className="mt-2 text-[18px] font-bold tracking-tight text-slate-900">
+                    Routine de supervision
+                  </h2>
+                  <p className="mt-1 text-[12px] text-slate-500">
+                    {checklistProgress.total} actions clés pour aujourd&apos;hui
+                  </p>
+                </div>
+                <div className="rounded-full border border-slate-100 bg-white px-3 py-1 text-[11px] font-semibold text-slate-500 shadow-sm">
+                  {checklistProgress.done}/{checklistProgress.total} terminées
+                </div>
+              </div>
+              <div className="mt-4 h-2 overflow-hidden rounded-full bg-slate-100">
+                <div
+                  className="h-full rounded-full bg-gradient-to-r from-emerald-400 via-amber-400 to-orange-400"
+                  style={{ width: `${checklistProgress.pct}%` }}
+                />
+              </div>
+              {checklistNotice ? (
+                <div
+                  className={`mt-4 rounded-xl border px-3 py-2 text-[12px] font-semibold ${
+                    checklistNoticeType === "error"
+                      ? "border-red-200 bg-red-50 text-red-700"
+                      : checklistNoticeType === "info"
+                        ? "border-sky-200 bg-sky-50 text-sky-700"
+                        : "border-emerald-200 bg-emerald-50 text-emerald-700"
+                  }`}
+                >
+                  {checklistNotice}
+                </div>
+              ) : null}
+
+              <form
+                onSubmit={handleAddTask}
+                className="mt-5 flex flex-wrap gap-2 rounded-2xl border border-dashed border-slate-200 bg-white/70 px-3 py-3"
+              >
+                <input
+                  type="text"
+                  value={newTaskTitle}
+                  onChange={(event) => setNewTaskTitle(event.target.value)}
+                  placeholder="Ajouter une tâche..."
+                  className="flex-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-[12px] font-medium text-slate-700 outline-none transition focus:border-emerald-300 focus:ring-2 focus:ring-emerald-100"
+                />
+                <select
+                  value={newTaskStatus}
+                  onChange={(event) => setNewTaskStatus(event.target.value)}
+                  className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-[12px] font-semibold text-slate-600"
+                >
+                  <option value="pending">En attente</option>
+                  <option value="attention">Urgent</option>
+                  <option value="done">Fait</option>
+                </select>
+                <button
+                  type="submit"
+                  className="inline-flex items-center gap-2 rounded-xl bg-emerald-500 px-4 py-2 text-[12px] font-semibold text-white shadow-sm transition hover:bg-emerald-600"
+                >
+                  <FiPlus className="text-[14px]" />
+                  Ajouter
+                </button>
+              </form>
+
+              <div className="mt-4 space-y-3">
+                {checklist.map((item) => {
+                  const Icon = item.icon || FiCheckCircle;
+                  const tone = checklistStyles[item.status] || checklistStyles.pending;
+                  const statusLabel = statusLabels[item.status] || "En attente";
+                  return (
+                    <div
+                      key={item.id}
+                      className="flex items-center gap-3 rounded-2xl border border-slate-100 bg-white/80 px-3 py-3 shadow-sm"
+                    >
+                      <div
+                        className={`flex h-10 w-10 items-center justify-center rounded-xl ${tone.iconWrap}`}
+                      >
+                        <Icon className={`text-[18px] ${tone.iconColor}`} />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-[13px] font-semibold text-slate-800">
+                          {item.title}
+                        </p>
+                        <p className="text-[11px] text-slate-400">
+                          {item.description || "Tâche personnalisée"}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleCycleStatus(item.id)}
+                        className={`shrink-0 rounded-full px-3 py-1 text-[9px] font-bold uppercase tracking-[0.18em] transition ${tone.badge}`}
+                        title="Cliquer pour changer l'état"
+                      >
+                        {statusLabel}
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+
+          <div className="dash-fade relative overflow-hidden rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
+            <div className="pointer-events-none absolute -right-10 -top-14 h-44 w-44 rounded-full bg-orange-200/40 blur-3xl" />
+            <div className="pointer-events-none absolute -bottom-20 left-10 h-48 w-48 rounded-full bg-sky-200/40 blur-3xl" />
+            <div className="relative">
+              <div className="flex flex-wrap items-start justify-between gap-4">
+                <div>
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">
+                    Tendance
+                  </p>
+                  <h2 className="mt-2 text-[18px] font-bold tracking-tight text-slate-900">
+                    Arrêts non conformes
+                  </h2>
+                  <p className="mt-1 text-[12px] text-slate-500">
+                    Total {formatNumber(trendTotal, "0")} sur {trendMeta.label.toLowerCase()}.
+                  </p>
+                </div>
+                <div className="inline-flex items-center gap-1 rounded-full bg-slate-100 p-1 text-[11px] font-semibold text-slate-500">
+                  {periods
+                    .filter((item) => item.id !== "day")
+                    .map((item) => (
+                      <button
+                        key={item.id}
+                        onClick={() => setPeriod(item.id)}
+                        className={`rounded-full px-3 py-1 transition-all ${
+                          period === item.id
+                            ? "bg-white text-slate-900 shadow-sm"
+                            : "text-slate-500"
+                        }`}
+                      >
+                        {item.label}
+                      </button>
+                    ))}
+                </div>
+              </div>
+
+              <div className="mt-4 h-[170px]">
+                {loading ? (
+                  <div className="flex h-full items-center justify-center">
+                    <div className="h-3 w-3 animate-ping rounded-full bg-orange-400" />
+                  </div>
+                ) : (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={trendSeries} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                      <defs>
+                        <linearGradient id="trendFill" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor="#f97316" stopOpacity={0.35} />
+                          <stop offset="100%" stopColor="#f97316" stopOpacity={0.02} />
+                        </linearGradient>
+                      </defs>
+                      <XAxis
+                        dataKey="date"
+                        tickFormatter={(value) => String(value || "").slice(5)}
+                        tick={{ fontSize: 10, fill: "#94a3b8" }}
+                        axisLine={false}
+                        tickLine={false}
+                        interval="preserveStartEnd"
+                      />
+                      <YAxis hide />
+                      <Tooltip
+                        contentStyle={{
+                          borderRadius: 12,
+                          border: "none",
+                          boxShadow: "0 8px 24px rgba(15,23,42,0.12)",
+                          fontSize: 12,
+                        }}
+                        labelFormatter={(label) => `Date: ${label}`}
+                        formatter={(value) => [value, "Arrêts NC"]}
+                      />
+                      <Area
+                        type="monotone"
+                        dataKey="value"
+                        stroke="#f97316"
+                        strokeWidth={2}
+                        fill="url(#trendFill)"
+                        activeDot={{ r: 5 }}
+                      />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                )}
+              </div>
+
+              <div className="mt-3 flex flex-wrap items-center gap-4 text-[11px] font-semibold text-slate-500">
+                <span>Dernier jour: {formatNumber(trendLatest, "0")}</span>
+                <span>Pic: {formatNumber(trendPeak, "0")}</span>
+              </div>
+            </div>
+          </div>
         </section>
 
         {/* ═══════════════════════════════════════════════
@@ -555,6 +999,7 @@ const Dashboard = () => {
             reste affiché avec les autres données.
           </div>
         )}
+        </div>
       </div>
 
       <MapModal

@@ -37,10 +37,10 @@ const hasPolygonColumn = async () => {
   return poiHasPolygonColumn;
 };
 
-const hasPoiHistoryOldDataColumn = async () => {
+const hasPoiHistoryOldDataColumn = async (db = pool) => {
   if (poiHistoryHasOldDataColumn !== null) return poiHistoryHasOldDataColumn;
 
-  const result = await pool.query(`
+  const result = await db.query(`
     SELECT 1
     FROM information_schema.columns
     WHERE table_schema = 'public'
@@ -53,10 +53,10 @@ const hasPoiHistoryOldDataColumn = async () => {
   return poiHistoryHasOldDataColumn;
 };
 
-const hasPoiHistoryNewDataColumn = async () => {
+const hasPoiHistoryNewDataColumn = async (db = pool) => {
   if (poiHistoryHasNewDataColumn !== null) return poiHistoryHasNewDataColumn;
 
-  const result = await pool.query(`
+  const result = await db.query(`
     SELECT 1
     FROM information_schema.columns
     WHERE table_schema = 'public'
@@ -69,7 +69,7 @@ const hasPoiHistoryNewDataColumn = async () => {
   return poiHistoryHasNewDataColumn;
 };
 
-const buildPoiSnapshot = (poi) => {
+export const buildPoiSnapshot = (poi) => {
   if (!poi) return null;
 
   return {
@@ -85,7 +85,8 @@ const buildPoiSnapshot = (poi) => {
   };
 };
 
-const insertPoiHistory = async ({
+export const insertPoiHistory = async ({
+  db = pool,
   poiId,
   poiCode,
   action,
@@ -93,11 +94,11 @@ const insertPoiHistory = async ({
   oldData = null,
   newData = null,
 }) => {
-  const hasOldData = await hasPoiHistoryOldDataColumn();
-  const hasNewData = await hasPoiHistoryNewDataColumn();
+  const hasOldData = await hasPoiHistoryOldDataColumn(db);
+  const hasNewData = await hasPoiHistoryNewDataColumn(db);
 
   if (hasOldData && hasNewData) {
-    await pool.query(
+    await db.query(
       "INSERT INTO poi_historique (poi_id, poi_code, action, details, old_data, new_data) VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb)",
       [
         poiId,
@@ -111,7 +112,7 @@ const insertPoiHistory = async ({
     return;
   }
 
-  await pool.query(
+  await db.query(
     "INSERT INTO poi_historique (poi_id, poi_code, action, details) VALUES ($1, $2, $3, $4)",
     [poiId, poiCode, action, details],
   );

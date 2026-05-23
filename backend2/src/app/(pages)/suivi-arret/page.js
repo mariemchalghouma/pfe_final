@@ -107,6 +107,44 @@ const extractSiteCode = (value) => {
   return normalized && normalized !== "-" ? normalized : null;
 };
 
+const normalizeCamion = (value) => (value || "").toString().trim();
+
+const parseToMs = (value) => {
+  if (!value) return null;
+  if (value instanceof Date) {
+    const ms = value.getTime();
+    return Number.isFinite(ms) ? ms : null;
+  }
+  const raw = String(value).trim();
+  if (!raw) return null;
+  const normalized = raw
+    .replace(" ", "T")
+    .replace(/([+-]\d{2})$/, "$1:00");
+  const ms = Date.parse(normalized);
+  return Number.isFinite(ms) ? ms : null;
+};
+
+const toDateKey = (value) => {
+  const ms = parseToMs(value);
+  if (!Number.isFinite(ms)) return null;
+  return new Date(ms).toISOString().split("T")[0];
+};
+
+const parseSourceId = (sourceId) => {
+  if (!sourceId || !sourceId.includes("|")) return null;
+  const [camion, tsRaw] = sourceId.split("|", 2);
+  return {
+    camion: normalizeCamion(camion),
+    tsMs: parseToMs(tsRaw),
+  };
+};
+
+const isStopCall = (appel) => {
+  const sourceTable = (appel?.source_table || "").toString().toLowerCase().trim();
+  const typeNc = (appel?.type_nc || "").toString().toLowerCase().trim();
+  return sourceTable === "voyage_tracking_stops" || typeNc.startsWith("arret");
+};
+
 const Arrets = () => {
   const [arrets, setArrets] = useState([]);
   const [groups, setGroups] = useState([]);
@@ -294,13 +332,51 @@ const Arrets = () => {
   };
 
   const findAppelForArret = (arret) => {
-    const camion = (arret.camion || "").trim();
-    const arretDate = (arret.date || "").split(" ")[0];
-    return appelsData.find((a) => {
-      const aCamion = (a.camion_id || "").trim();
-      const aDate = (a.ts_detection || a.date_appel || "").split("T")[0];
-      return aCamion === camion && aDate === arretDate && a.session_id;
-    });
+    const camion = normalizeCamion(arret.camion);
+    if (!camion) return null;
+
+    const stopMs = parseToMs(arret.beginstoptime || arret._stopStart || arret.date);
+    const stopDateKey = toDateKey(arret.beginstoptime || arret.date);
+
+    const candidates = appelsData.filter((a) =>
+      a?.session_id &&
+      normalizeCamion(a.camion_id) === camion &&
+      isStopCall(a)
+    );
+
+    if (!candidates.length) return null;
+
+    const MAX_DIFF_MS = 90 * 60 * 1000;
+    if (stopMs != null) {
+      let best = null;
+      for (const appel of candidates) {
+        const parsed = parseSourceId(appel.source_id);
+        if (!parsed || parsed.camion !== camion || parsed.tsMs == null) continue;
+        const diff = Math.abs(parsed.tsMs - stopMs);
+        if (!best || diff < best.diff) best = { appel, diff };
+      }
+      if (best && best.diff <= MAX_DIFF_MS) return best.appel;
+    }
+
+    if (stopDateKey) {
+      const sameDay = candidates.filter((a) =>
+        toDateKey(a.ts_detection || a.date_appel) === stopDateKey
+      );
+      if (sameDay.length === 1) return sameDay[0];
+      if (sameDay.length > 1 && stopMs != null) {
+        let best = null;
+        for (const appel of sameDay) {
+          const appelMs = parseToMs(appel.ts_detection || appel.date_appel);
+          if (appelMs == null) continue;
+          const diff = Math.abs(appelMs - stopMs);
+          if (!best || diff < best.diff) best = { appel, diff };
+        }
+        if (best) return best.appel;
+      }
+      if (sameDay.length > 0) return sameDay[0];
+    }
+
+    return null;
   };
 
   const availableSites = useMemo(() => {

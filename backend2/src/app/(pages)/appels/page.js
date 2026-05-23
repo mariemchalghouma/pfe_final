@@ -2,7 +2,7 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { FiPhoneCall, FiPhoneIncoming, FiPhoneOutgoing } from 'react-icons/fi'
-import { getHistorique, validerConversation } from '../../../lib/api'
+import { getHistorique } from '../../../lib/api'
 
 const STORAGE_KEY = 'appels_sessions_lues'
 function getReadSessions() {
@@ -85,7 +85,7 @@ export default function Page() {
   }
 
   // ── Mark as read handler (localStorage + API) ──
-  const handleMarquerLue = async (row) => {
+  const handleMarquerLue = (row) => {
     const sid = row.session_id
     if (!sid || sid === 'null') return
     // 1. localStorage — feedback visuel instantané
@@ -93,12 +93,6 @@ export default function Page() {
     updated.add(sid)
     saveReadSessions(updated)
     setReadSessions(updated)
-    // 2. API — mettre etat='conforme' dans les tables source
-    try {
-      await validerConversation(sid)
-    } catch (e) {
-      console.error('Erreur validation BDD:', e)
-    }
   }
 
   const normalizeMode = (value) => String(value || '').trim().toLowerCase()

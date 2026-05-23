@@ -532,10 +532,10 @@ JOIN LATERAL (
         m_debut.fuel - m_fin.fuel                           AS chute_litres,
         ROUND(((m_debut.fuel - m_fin.fuel)
             / NULLIF(m_debut.fuel, 0) * 100)::numeric, 1)  AS chute_pct
-    FROM mesures m_debut
+    FROM niveau_carburant m_debut
     JOIN LATERAL (
         SELECT fuel
-        FROM mesures m_inner
+        FROM niveau_carburant m_inner
         WHERE m_inner.camion = m_debut.camion
           AND m_inner.gps_dt >= s.beginstoptime
           AND m_inner.gps_dt <= s.endstoptime
@@ -545,7 +545,7 @@ JOIN LATERAL (
     WHERE m_debut.camion = s.camion
       AND m_debut.gps_dt = (
             SELECT MIN(gps_dt)
-            FROM mesures
+            FROM niveau_carburant
             WHERE camion  = s.camion
               AND gps_dt >= s.beginstoptime
               AND gps_dt <= s.endstoptime
@@ -586,7 +586,7 @@ LIMIT 5
         THEN '+216' || LPAD(TRIM(TO_CHAR(v."SALTEL", '99999999')), 8, '0')
         ELSE NULL
     END                                                     AS numero_tel,
-    'mesures'                                               AS source_table,
+    'niveau_carburant'                                               AS source_table,
     'chute_carburant'                                       AS type_nc,
 
     -- Infos carburant
@@ -597,17 +597,17 @@ LIMIT 5
         / NULLIF(m1.fuel, 0) * 100)::numeric, 1)           AS chute_pct,
     3                                                       AS cas_nc
 
-FROM mesures m1
+FROM niveau_carburant m1
 
 -- Jointure principale : chauffeur du jour
 JOIN voyage_chauffeur v
   ON  v."PLAMOTI"      = m1.camion
   AND DATE(v."VOYDTD") = DATE(m1.gps_dt)
 
--- Mesure suivante dans les 30 minutes (pour calculer la chute)
+-- Niveau suivant dans les 30 minutes (pour calculer la chute)
 JOIN LATERAL (
     SELECT fuel
-    FROM mesures m_inner
+    FROM niveau_carburant m_inner
     WHERE m_inner.camion = m1.camion
       AND m_inner.gps_dt > m1.gps_dt
       AND m_inner.gps_dt <= m1.gps_dt + INTERVAL '30 minutes'
@@ -620,7 +620,7 @@ WHERE m1.date_creation = CURRENT_DATE
   AND (m1.fuel - m2.fuel) / NULLIF(m1.fuel, 0) > 0.15
   AND NOT EXISTS (
       SELECT 1 FROM historique_appels h
-      WHERE h.source_table = 'mesures'
+      WHERE h.source_table = 'niveau_carburant'
         AND h.source_id    = m1.ctid::text
         AND h.statut      IN ('en_cours', 'appel_termine')
   )
@@ -1856,10 +1856,73 @@ def route_conversation(session_id: str):
         
         if conv:
             conv = dict(conv)
-            cur.execute("SELECT type_nc FROM historique_appels WHERE session_id=%s LIMIT 1", (session_id,))
+            cur.execute("""
+                SELECT source_table, source_id, source_table_2, source_id_2, type_nc
+                FROM historique_appels
+                WHERE session_id=%s
+                ORDER BY ts_detection DESC
+                LIMIT 1
+            """, (session_id,))
             hist_row = cur.fetchone()
-            if hist_row and hist_row.get("type_nc"):
-                conv["type_nc"] = hist_row["type_nc"]
+
+            def _etat_from_source(table: str, sid: str):
+                if not table or not sid:
+                    return None
+                parts = sid.split("|", 1) if "|" in sid else []
+                if table == "voyage_tracking_stops" and len(parts) == 2:
+                    cur.execute("""
+                        SELECT etat FROM voyage_tracking_stops
+                        WHERE camion = %s AND beginstoptime = %s::timestamptz
+                        LIMIT 1
+                    """, (parts[0], parts[1]))
+                elif table == "voyagetracking_port_ouvert" and len(parts) == 2:
+                    cur.execute("""
+                        SELECT etat FROM voyagetracking_port_ouvert
+                        WHERE camion = %s AND date_ouverture = %s::timestamptz
+                        LIMIT 1
+                    """, (parts[0], parts[1]))
+                elif table == "voyage_tracking_stops":
+                    cur.execute("""
+                        SELECT etat FROM voyage_tracking_stops
+                        WHERE ctid = %s::tid
+                        LIMIT 1
+                    """, (sid,))
+                elif table == "voyagetracking_port_ouvert":
+                    cur.execute("""
+                        SELECT etat FROM voyagetracking_port_ouvert
+                        WHERE ctid = %s::tid
+                        LIMIT 1
+                    """, (sid,))
+                else:
+                    return None
+                row = cur.fetchone()
+                return row.get("etat") if row else None
+
+            def _is_conforme(table: str, sid: str):
+                etat = _etat_from_source(table, sid)
+                if etat is None:
+                    return None
+                return etat == "conforme"
+
+            if hist_row:
+                if hist_row.get("type_nc"):
+                    conv["type_nc"] = hist_row["type_nc"]
+
+                primary_ok = _is_conforme(hist_row.get("source_table"), hist_row.get("source_id"))
+                secondary_ok = _is_conforme(hist_row.get("source_table_2"), hist_row.get("source_id_2"))
+
+                if primary_ok is None and secondary_ok is None:
+                    conv["validation_status"] = "inconnu"
+                    conv["validation_conforme"] = None
+                elif primary_ok is True and (secondary_ok is None or secondary_ok is True):
+                    conv["validation_status"] = "valide"
+                    conv["validation_conforme"] = True
+                else:
+                    conv["validation_status"] = "non_valide"
+                    conv["validation_conforme"] = False
+            else:
+                conv["validation_status"] = "inconnu"
+                conv["validation_conforme"] = None
 
 
         # Messages individuels

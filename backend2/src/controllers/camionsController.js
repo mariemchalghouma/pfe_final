@@ -538,7 +538,7 @@ export const getCamionsGantt = async (date) => {
           if (a.source_table === "voyage_tracking_stops") {
             typeLabel = "Arrêt non prévu";
           } else if (
-            a.source_table === "mesures" ||
+            a.source_table === "niveau_carburant" ||
             a.source_table === "voyagetracking_ravitaillement"
           ) {
             typeLabel = "Chute de carburant";
