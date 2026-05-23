@@ -3,8 +3,9 @@ import React, { useEffect, useMemo, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 
-import { getConversation, audioUrl, validerConversation } from '../../../../lib/api'
+import { getConversation, audioUrl, validerConversation, getHistorique } from '../../../../lib/api'
 import MapModal from '@/components/map/MapModal'
+import { arretsAPI, ouverturesAPI } from '@/services/api'
 
 const STORAGE_KEY = 'appels_sessions_lues'
 const VALIDATION_STORAGE_KEY = 'appels_sessions_valides'
@@ -74,6 +75,7 @@ export default function SessionPage() {
   const [fuelData, setFuelData] = useState(null)
   const [isMapOpen, setIsMapOpen] = useState(false)
   const [mapPositions, setMapPositions] = useState([])
+  const [pointNoirInfo, setPointNoirInfo] = useState(null)
   const router = useRouter()
 
   // Charger le statut "lue" depuis localStorage
@@ -139,6 +141,7 @@ export default function SessionPage() {
     tags: { display: 'flex', flexWrap: 'wrap', gap: 8 },
     tag: { background: '#e9f7ef', color: '#2c7a4b', border: '1px solid #c9eed8', padding: '6px 10px', borderRadius: 999, fontSize: 12, fontWeight: 600 },
     tagAlt: { background: '#fff4e6', color: '#9b5d10', border: '1px solid #ffd8ad' },
+    tagPointNoir: { background: '#0f172a', color: '#fff', border: '1px solid #0f172a' },
     grid: { display: 'grid', gridTemplateColumns: '1.2fr 0.8fr', gap: 20 },
     column: { display: 'flex', flexDirection: 'column', gap: 16 },
     card: {
@@ -232,6 +235,51 @@ export default function SessionPage() {
 
     const ms = Date.parse(normalized)
     return Number.isFinite(ms) ? ms : null
+  }
+
+  const normalizeSourceId = (value) => {
+    if (!value) return null
+    const raw = String(value).trim()
+    if (!raw || !raw.includes('|')) return null
+    const [camion, tsRaw] = raw.split('|', 2)
+    if (!camion || !tsRaw) return null
+    const ts = tsRaw
+      .replace('T', ' ')
+      .split('.')[0]
+      .replace(/Z$/, '')
+      .replace(/([+-]\d{2}:\d{2})$/, '')
+      .trim()
+    return `${camion}|${ts}`
+  }
+
+  const formatSourceId = (camion, value) => {
+    if (!camion || !value) return null
+    const dt = new Date(value)
+    if (!Number.isNaN(dt.getTime())) {
+      const iso = dt.toISOString().replace('T', ' ').split('.')[0]
+      return `${camion}|${iso}`
+    }
+    const raw = String(value).trim()
+    if (!raw) return null
+    const ts = raw.replace('T', ' ').split('.')[0]
+    return `${camion}|${ts}`
+  }
+
+  const buildSourceKey = (table, sourceId) => {
+    const normalized = normalizeSourceId(sourceId)
+    if (!table || !normalized) return null
+    return `${table}|${normalized}`
+  }
+
+  const getDateKeyFromSource = (sourceId, fallback) => {
+    const normalized = normalizeSourceId(sourceId)
+    if (normalized) {
+      const parts = normalized.split('|')
+      if (parts[1]) return parts[1].split(' ')[0]
+    }
+    if (!fallback) return null
+    const d = new Date(fallback)
+    return Number.isNaN(d.getTime()) ? null : d.toISOString().split('T')[0]
   }
 
   const fuelSeries = useMemo(() => {
@@ -348,6 +396,57 @@ export default function SessionPage() {
     }
     loadFuel()
   }, [conv.camion_id, conv.date_appel, conv.type_nc, conv.type])
+
+  useEffect(() => {
+    let active = true
+    async function loadPointNoir() {
+      try {
+        if (!session_id) return
+        const hist = await getHistorique(200)
+        const row = (hist?.appels || []).find((r) => r.session_id === session_id)
+        if (!row) return
+
+        const sourceTable = row.source_table_2 || row.source_table || ''
+        const sourceIdRaw = row.source_id_2 || row.source_id || ''
+        const sourceKey = buildSourceKey(sourceTable, sourceIdRaw)
+        const dateKey = getDateKeyFromSource(sourceIdRaw, row.date_appel || row.ts_detection)
+        if (!dateKey || !sourceKey) return
+
+        const [arretsRes, portesRes] = await Promise.all([
+          arretsAPI.getArrets({ dateStart: dateKey, dateEnd: dateKey, limit: 2000, offset: 0 }),
+          ouverturesAPI.getOuvertures({ dateStart: dateKey, dateEnd: dateKey }),
+        ])
+
+        const map = new Map()
+        const arrets = Array.isArray(arretsRes?.data) ? arretsRes.data : []
+        const portes = Array.isArray(portesRes?.data) ? portesRes.data : []
+
+        arrets.forEach((stop) => {
+          if (!stop?.isPointNoir) return
+          const sourceId = formatSourceId(stop.camion, stop.beginstoptime || stop.date)
+          const key = buildSourceKey('voyage_tracking_stops', sourceId)
+          if (!key) return
+          map.set(key, { label: stop.pointNoirPoi || stop.poiPlanning || 'Point noir' })
+        })
+
+        portes.forEach((door) => {
+          if (!door?.isPointNoir) return
+          const sourceId = formatSourceId(door.camion, door.dateOuverture || door.date_ouverture)
+          const key = buildSourceKey('voyagetracking_port_ouvert', sourceId)
+          if (!key) return
+          map.set(key, { label: door.pointNoirPoi || door.poiProche || 'Point noir' })
+        })
+
+        if (active) setPointNoirInfo(map.get(sourceKey) || null)
+      } catch (e) {
+        console.error('Erreur point noir session:', e)
+        if (active) setPointNoirInfo(null)
+      }
+    }
+
+    loadPointNoir()
+    return () => { active = false }
+  }, [session_id])
 
   const audioSrc = useMemo(() => {
     if (!conv.fichier_audio) return null
@@ -466,6 +565,11 @@ export default function SessionPage() {
             <div style={s.tags}>
               <span style={s.tag}>{durationLabel}</span>
               <span style={{ ...s.tag, ...s.tagAlt }}>{conv.nb_tours ?? 0} tours</span>
+              {pointNoirInfo && (
+                <span style={{ ...s.tag, ...s.tagPointNoir }}>
+                  Point noir
+                </span>
+              )}
             </div>
             <button
               type="button"

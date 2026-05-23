@@ -45,6 +45,12 @@ export const getOuvertures = async ({ date, dateStart, dateEnd, camion }) => {
           planned.poi_description AS planned_poi_description,
           planned.rayon_m AS planned_poi_rayon_m,
           planned.distance_m AS planned_distance_m
+            ,point_noir.poi_id AS point_noir_id
+            ,point_noir.poi_code AS point_noir_code
+            ,point_noir.poi_groupe AS point_noir_groupe
+            ,point_noir.poi_description AS point_noir_description
+            ,point_noir.rayon_m AS point_noir_rayon_m
+            ,point_noir.distance_m AS point_noir_distance_m
       FROM voyagetracking_port_ouvert o
       LEFT JOIN LATERAL (
         SELECT
@@ -104,6 +110,30 @@ export const getOuvertures = async ({ date, dateStart, dateEnd, camion }) => {
           AND UPPER(REPLACE(p.code::text, ' ', '')) = UPPER(REPLACE(planning.destination_code::text, ' ', ''))
         LIMIT 1
       ) AS planned ON TRUE
+      LEFT JOIN LATERAL (
+        SELECT
+            p.id AS poi_id,
+            p.code AS poi_code,
+            p.groupe AS poi_groupe,
+            p.description AS poi_description,
+            COALESCE(NULLIF(p.rayon, 0), ${RAYON_PAR_DEFAUT_METRES})::numeric AS rayon_m,
+            ROUND((
+                6371000 * 2 * ASIN(
+                    SQRT(
+                        POWER(SIN(RADIANS(((o.lat)::double precision - (p.lat)::double precision) / 2)), 2)
+                        + COS(RADIANS((o.lat)::double precision))
+                        * COS(RADIANS((p.lat)::double precision))
+                        * POWER(SIN(RADIANS(((o.lng)::double precision - (p.lng)::double precision) / 2)), 2)
+                    )
+                )
+            )::numeric, 2) AS distance_m
+        FROM poi p
+        WHERE o.lat IS NOT NULL
+          AND o.lng IS NOT NULL
+          AND LOWER(COALESCE(p.groupe, '')) LIKE '%point%noir%'
+        ORDER BY distance_m ASC
+        LIMIT 1
+      ) AS point_noir ON TRUE
       WHERE 1=1
     `;
 
@@ -137,6 +167,14 @@ export const getOuvertures = async ({ date, dateStart, dateEnd, camion }) => {
         row.planned_poi_rayon_m !== null
           ? Number(row.planned_poi_rayon_m)
           : RAYON_PAR_DEFAUT_METRES;
+      const pointNoirDistanceMetres =
+        row.point_noir_distance_m !== null
+          ? Number(row.point_noir_distance_m)
+          : null;
+      const pointNoirRayonMetres =
+        row.point_noir_rayon_m !== null
+          ? Number(row.point_noir_rayon_m)
+          : RAYON_PAR_DEFAUT_METRES;
       const dureeMinutes =
         row.duree_minutes !== null ? Number(row.duree_minutes) : null;
       const voyagePlanifie = Boolean(row.voyage_planifie);
@@ -153,6 +191,10 @@ export const getOuvertures = async ({ date, dateStart, dateEnd, camion }) => {
 
       const statut = row.db_etat || calculatedStatut;
       const needsUpdate = !row.db_etat;
+      const isPointNoir =
+        !!row.point_noir_id &&
+        pointNoirDistanceMetres !== null &&
+        pointNoirDistanceMetres <= pointNoirRayonMetres;
 
       return {
         needsUpdate,
@@ -175,6 +217,13 @@ export const getOuvertures = async ({ date, dateStart, dateEnd, camion }) => {
         distancePoiProgrammeMetres,
         seuilConformiteMetres: rayonPoiProgrammeMetres,
         seuilConformiteParDefautMetres: RAYON_PAR_DEFAUT_METRES,
+        isPointNoir,
+        pointNoirPoi: isPointNoir
+          ? row.point_noir_code || row.point_noir_description || null
+          : null,
+        pointNoirGroupe: row.point_noir_groupe || null,
+        distancePointNoirMetres: pointNoirDistanceMetres,
+        rayonPointNoirMetres: pointNoirRayonMetres,
         dureeMinutes,
         seuilDureeMinutes: DUREE_MAX_MINUTES,
         duree: row.duration || null,

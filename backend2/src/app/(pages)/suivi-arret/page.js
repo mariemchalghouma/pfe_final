@@ -107,6 +107,17 @@ const extractSiteCode = (value) => {
   return normalized && normalized !== "-" ? normalized : null;
 };
 
+const getPlannedPoiCode = (arret) => {
+  const planned = extractSiteCode(arret?.destination_programmee);
+  if (planned) return planned;
+  return extractSiteCode(arret?.nextDestination) || "";
+};
+
+const getPoiDescription = (arret) => {
+  const address = (arret?.poiGps || "").toString().trim();
+  return address && address !== "-" ? address : "";
+};
+
 const normalizeCamion = (value) => (value || "").toString().trim();
 
 const parseToMs = (value) => {
@@ -474,7 +485,11 @@ const Arrets = () => {
 
   const handleOpenPoiModal = (e, arret) => {
     e.stopPropagation();
-    setPoiModalData(arret);
+    setPoiModalData({
+      ...arret,
+      code: getPlannedPoiCode(arret),
+      description: getPoiDescription(arret),
+    });
     setShowPoiModal(true);
   };
 
@@ -530,9 +545,30 @@ const Arrets = () => {
   const handleSavePoi = async (poiData) => {
     try {
       await poiAPI.createPOI(poiData);
+      let autoValidationFailed = false;
+
+      if (poiModalData?.id) {
+        try {
+          const updateRes = await arretsAPI.updateEtat({
+            row_ctid: poiModalData.id,
+            etat: "conforme",
+          });
+          if (!updateRes?.success || Number(updateRes?.updated || 0) === 0) {
+            autoValidationFailed = true;
+          }
+        } catch (error) {
+          autoValidationFailed = true;
+          console.error("Failed to update arret etat:", error);
+        }
+      }
+
       setShowPoiModal(false);
       setPoiModalData(null);
-      alert("POI ajouté avec succès !");
+      alert(
+        autoValidationFailed
+          ? "POI ajouté, mais l'arrêt n'a pas pu être validé automatiquement."
+          : "POI ajouté avec succès !",
+      );
       window.location.reload();
     } catch (error) {
       console.error("Failed to save POI:", error);
@@ -935,7 +971,9 @@ const Arrets = () => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50">
-                  {filteredData.map((arret) => (
+                  {filteredData.map((arret) => {
+                    const isPointNoir = Boolean(arret.isPointNoir);
+                    return (
                     <tr
                       key={arret.id}
                       onClick={() => handleSelectArret(arret)}
@@ -945,8 +983,9 @@ const Arrets = () => {
                           : ""
                       }`}
                       style={{
-                        backgroundColor:
-                          arret.status === "conforme" ? "#f0fdf4" : "#fef2f2",
+                        backgroundColor: isPointNoir
+                          ? "#fefce8"
+                          : arret.status === "conforme" ? "#f0fdf4" : "#fef2f2",
                       }}
                     >
                       <td className="whitespace-nowrap px-6 py-2">
@@ -1000,21 +1039,27 @@ const Arrets = () => {
                           <div className="flex items-center gap-2">
                             <div
                               className={`h-2 w-2 rounded-full ${
-                                arret.status === "conforme"
-                                  ? "bg-green-500"
-                                  : "bg-red-500"
+                                isPointNoir
+                                  ? "bg-slate-900"
+                                  : arret.status === "conforme"
+                                    ? "bg-green-500"
+                                    : "bg-red-500"
                               }`}
                             ></div>
                             <span
                               className={`text-[10px] font-semibold uppercase tracking-tighter ${
-                                arret.status === "conforme"
-                                  ? "text-green-700"
-                                  : "text-red-700"
+                                isPointNoir
+                                  ? "text-slate-900"
+                                  : arret.status === "conforme"
+                                    ? "text-green-700"
+                                    : "text-red-700"
                               }`}
                             >
-                              {arret.status === "conforme"
-                                ? "Conforme"
-                                : "Écart détecté"}
+                              {isPointNoir
+                                ? "Point noir"
+                                : arret.status === "conforme"
+                                  ? "Conforme"
+                                  : "Écart détecté"}
                             </span>
                           </div>
                           {arret.distance_poi_proche !== null ? (
@@ -1029,6 +1074,11 @@ const Arrets = () => {
                           ) : (
                             <span className="text-[10px] font-bold text-gray-300">
                               Dist. POI proche indisponible
+                            </span>
+                          )}
+                          {isPointNoir && arret.pointNoirPoi && (
+                            <span className="text-[11px] font-semibold text-slate-700">
+                              Point noir: {arret.pointNoirPoi}
                             </span>
                           )}
                           {Array.isArray(arret.validatedPois) &&
@@ -1090,7 +1140,7 @@ const Arrets = () => {
                       </td>
                       <td className="px-6 py-2">
                         <div className="flex items-center gap-2 transition-opacity">
-                          {arret.status === "non_conforme" && (
+                          {arret.status === "non_conforme" && !isPointNoir && (
                             <button
                               onClick={(e) => handleOpenPoiModal(e, arret)}
                               className="rounded-lg border border-gray-200 bg-white p-2 text-gray-600 shadow-sm transition-all hover:border-orange-200 hover:text-orange-600"
@@ -1108,7 +1158,8 @@ const Arrets = () => {
                         </div>
                       </td>
                     </tr>
-                  ))}
+                  );
+                  })}
                 </tbody>
               </table>
             </div>

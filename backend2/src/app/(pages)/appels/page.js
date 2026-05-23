@@ -3,6 +3,7 @@ import React, { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { FiPhoneCall, FiPhoneIncoming, FiPhoneOutgoing } from 'react-icons/fi'
 import { getHistorique } from '../../../lib/api'
+import { arretsAPI, ouverturesAPI } from '@/services/api'
 
 const STORAGE_KEY = 'appels_sessions_lues'
 function getReadSessions() {
@@ -51,6 +52,7 @@ export default function Page() {
   const [filterCallMode, setFilterCallMode] = useState('all') // 'all' | 'entrant' | 'sortant'
   const [filterCallType, setFilterCallType] = useState('all') // 'all' | 'chute_carburant' | 'arret_et_chute_carburant' | 'arret' | 'arret_et_porte_ouverte'
   const [appliedFilters, setAppliedFilters] = useState({ debut: toISO(weekAgo), fin: toISO(today), camion: '', chauffeur: '', callMode: 'all', callType: 'all' })
+  const [pointNoirMap, setPointNoirMap] = useState(new Map())
 
   useEffect(() => {
     async function load() {
@@ -66,6 +68,86 @@ export default function Page() {
     }
     load()
   }, [])
+
+  const normalizeSourceId = (value) => {
+    if (!value) return null
+    const raw = String(value).trim()
+    if (!raw || !raw.includes('|')) return null
+    const [camion, tsRaw] = raw.split('|', 2)
+    if (!camion || !tsRaw) return null
+    const ts = tsRaw
+      .replace('T', ' ')
+      .split('.')[0]
+      .replace(/Z$/, '')
+      .replace(/([+-]\d{2}:\d{2})$/, '')
+      .trim()
+    return `${camion}|${ts}`
+  }
+
+  const formatSourceId = (camion, value) => {
+    if (!camion || !value) return null
+    const dt = new Date(value)
+    if (!Number.isNaN(dt.getTime())) {
+      const iso = dt.toISOString().replace('T', ' ').split('.')[0]
+      return `${camion}|${iso}`
+    }
+    const raw = String(value).trim()
+    if (!raw) return null
+    const ts = raw.replace('T', ' ').split('.')[0]
+    return `${camion}|${ts}`
+  }
+
+  const buildSourceKey = (table, sourceId) => {
+    const normalized = normalizeSourceId(sourceId)
+    if (!table || !normalized) return null
+    return `${table}|${normalized}`
+  }
+
+  useEffect(() => {
+    let active = true
+    async function loadPointNoir() {
+      try {
+        const dateStart = appliedFilters.debut
+        const dateEnd = appliedFilters.fin
+        const [arretsRes, portesRes] = await Promise.all([
+          arretsAPI.getArrets({ dateStart, dateEnd, limit: 2000, offset: 0 }),
+          ouverturesAPI.getOuvertures({ dateStart, dateEnd }),
+        ])
+
+        const map = new Map()
+        const arrets = Array.isArray(arretsRes?.data) ? arretsRes.data : []
+        const portes = Array.isArray(portesRes?.data) ? portesRes.data : []
+
+        arrets.forEach((stop) => {
+          if (!stop?.isPointNoir) return
+          const sourceId = formatSourceId(stop.camion, stop.beginstoptime || stop.date)
+          const key = buildSourceKey('voyage_tracking_stops', sourceId)
+          if (!key) return
+          map.set(key, {
+            label: stop.pointNoirPoi || stop.poiPlanning || 'Point noir',
+          })
+        })
+
+        portes.forEach((door) => {
+          if (!door?.isPointNoir) return
+          const sourceId = formatSourceId(door.camion, door.dateOuverture || door.date_ouverture)
+          const key = buildSourceKey('voyagetracking_port_ouvert', sourceId)
+          if (!key) return
+          map.set(key, {
+            label: door.pointNoirPoi || door.poiProche || 'Point noir',
+          })
+        })
+
+        if (active) setPointNoirMap(map)
+      } catch (e) {
+        console.error('Erreur chargement point noir:', e)
+        if (active) setPointNoirMap(new Map())
+      }
+    }
+
+    loadPointNoir()
+    return () => { active = false }
+  }, [appliedFilters])
 
   // Unique lists for dropdowns
   const camionOptions = useMemo(() => [...new Set(rows.map(r => r.camion_id).filter(Boolean))].sort(), [rows])
@@ -352,6 +434,7 @@ export default function Page() {
     type_porte_ouverte: { background: '#f2f3ff', color: '#5b5bd6', borderColor: '#e0e4ff' },
     type_arret_non_prevu: { background: '#eef7ff', color: '#3b82f6', borderColor: '#d6e7ff' },
     type_default: { background: '#f1f5f9', color: '#64748b', borderColor: '#e2e8f0' },
+    point_noir: { background: '#0f172a', color: '#ffffff', borderColor: '#0f172a' },
     etat_nouveau: { background: '#ffe7e7', color: '#f97316', borderColor: '#ffd1d1' },
     etat_en_cours: { background: '#e0f2fe', color: '#2563eb', borderColor: '#cfe8ff' },
     etat_active: { background: '#e0f2fe', color: '#2563eb', borderColor: '#cfe8ff' },
@@ -393,6 +476,11 @@ export default function Page() {
               const typeStyle = badgeStyles[`type_${r.type_nc || 'default'}`] || badgeStyles.type_default
               const etatKey = `etat_${(r.etat_appel || r.statut || 'default')}`
               const etatStyle = badgeStyles[etatKey] || badgeStyles.type_default
+              const sourceTable = r.source_table_2 || r.source_table || ''
+              const sourceId = r.source_id_2 || r.source_id || ''
+              const sourceKey = buildSourceKey(sourceTable, sourceId)
+              const pointNoirInfo = sourceKey ? pointNoirMap.get(sourceKey) : null
+              const isPointNoir = Boolean(pointNoirInfo)
               return (
                 <tr key={r.id}>
                   <td style={ui.td}>
@@ -412,7 +500,14 @@ export default function Page() {
                   </td>
                   <td style={{ ...ui.td, ...ui.mono }}>{r.numero_tel || '—'}</td>
                   <td style={ui.td}>
-                    <span style={{ ...ui.badge, ...typeStyle }}>{typeLabel}</span>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                      <span style={{ ...ui.badge, ...typeStyle }}>{typeLabel}</span>
+                      {isPointNoir && (
+                        <span style={{ ...ui.badge, ...badgeStyles.point_noir }}>
+                          Point noir
+                        </span>
+                      )}
+                    </div>
                   </td>
                   <td style={ui.td}>
                     <span style={{ ...ui.badge, ...etatStyle }}>{etatLabel}</span>

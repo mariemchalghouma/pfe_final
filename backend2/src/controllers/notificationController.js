@@ -47,6 +47,14 @@ const calculateDistance = (lat1, lon1, lat2, lon2) => {
   return R * c;
 };
 
+const normalizeGroup = (value) =>
+  (value || "").toString().toLowerCase().replace(/\s+/g, " ").trim();
+
+const isPointNoirGroup = (value) => {
+  const group = normalizeGroup(value);
+  return group.includes("point") && group.includes("noir");
+};
+
 /**
  * Upsert une liste de notifications générées dans la table notifications.
  * On insère seulement les nouvelles (ON CONFLICT DO NOTHING) pour garder le is_read.
@@ -91,9 +99,10 @@ export const getNotifications = async (userId) => {
     // ========== NOTIFICATIONS D'ARRÊTS NON CONFORMES ==========
     // Récupérer les POI pour la comparaison de conformité
     const poiResult = await pool.query(`
-      SELECT code, description as nom, lat, lng, rayon FROM poi
+      SELECT code, description as nom, lat, lng, rayon, groupe FROM poi
     `);
     const pois = poiResult.rows;
+    const pointNoirPois = pois.filter((poi) => isPointNoirGroup(poi.groupe));
 
     // Récupérer tous les voyages planifiés (sans limitation de date)
     const voyageResult = await pool.query(
@@ -181,9 +190,56 @@ export const getNotifications = async (userId) => {
 
       const plannedRayon = plannedPoi?.rayon ? Number(plannedPoi.rayon) : 10;
 
+      let pointNoirMatch = null;
+      if (refLat && refLng && pointNoirPois.length > 0) {
+        pointNoirPois.forEach((poi) => {
+          const dist = calculateDistance(
+            refLat,
+            refLng,
+            Number(poi.lat),
+            Number(poi.lng),
+          );
+          const poiRayon = poi?.rayon ? Number(poi.rayon) : 10;
+          if (dist <= poiRayon && (!pointNoirMatch || dist < pointNoirMatch.dist)) {
+            pointNoirMatch = { poi, dist, rayon: poiRayon };
+          }
+        });
+      }
+
       // Vérifier la non-conformité
       const isNonConforme =
         !matchedVoyage || !plannedPoi || plannedDistance > plannedRayon;
+
+      if (pointNoirMatch && row.beginstoptime) {
+        const stopDateObj = new Date(row.beginstoptime);
+        const timeStr = stopDateObj.toLocaleTimeString("fr-FR", {
+          hour: "2-digit",
+          minute: "2-digit",
+        });
+        const dateStr = stopDateObj.toLocaleDateString("fr-FR", {
+          year: "numeric",
+          month: "2-digit",
+          day: "2-digit",
+        });
+
+        generated.push({
+          id: `stop-point-noir-${row.camion}-${row.beginstoptime}-${row.endstoptime}`,
+          type: "Arrêt",
+          title: "Arrêt point noir",
+          message: `${row.camion} arrêté dans un point noir (${pointNoirMatch.poi.code || "POI"}) à ${row.address || "localisation inconnue"}`,
+          time: timeStr,
+          date: dateStr,
+          timestamp: stopDateObj,
+          icon: "FiAlertTriangle",
+          color: "text-slate-800",
+          bgColor: "bg-slate-100",
+          metadata: {
+            pointNoir: true,
+            poiCode: pointNoirMatch.poi.code || null,
+          },
+        });
+        return;
+      }
 
       if (isNonConforme && row.beginstoptime) {
         const stopDateObj = new Date(row.beginstoptime);

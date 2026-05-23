@@ -14,6 +14,7 @@ import {
 } from "react-icons/fi";
 import { ouverturesAPI } from "@/services/api";
 import MapModal from "@/components/map/MapModal";
+import { getAppelsParSource } from "@/lib/api";
 import {
   LineChart,
   Line,
@@ -110,7 +111,7 @@ const OuverturePorte = () => {
   const [selectedOuvertureId, setSelectedOuvertureId] = useState(null);
   const [isMapOpen, setIsMapOpen] = useState(false);
   const [mapPositions, setMapPositions] = useState([]);
-  const [appelsData] = useState([]);
+  const [appelsData, setAppelsData] = useState([]);
 
   const updateDraftFilter = (key, value) => {
     setDraftFilters((prev) => ({ ...prev, [key]: value }));
@@ -197,6 +198,8 @@ const OuverturePorte = () => {
           const voyagePlanifie = Boolean(
             item.voyagePlanifie ?? item.voyage_planifie,
           );
+          const isPointNoir = Boolean(item.isPointNoir);
+          const pointNoirPoi = item.pointNoirPoi ?? null;
           const statut =
             item.statut ??
             (voyagePlanifie &&
@@ -218,6 +221,8 @@ const OuverturePorte = () => {
             lat,
             lng,
             ouverture: "Oui",
+            isPointNoir,
+            pointNoirPoi,
             dateOuv: dateOuv
               ? dateOuv.toLocaleTimeString("fr-FR", {
                 hour: "2-digit",
@@ -248,6 +253,19 @@ const OuverturePorte = () => {
     };
 
     fetchOuvertures();
+
+    const fetchAppels = async () => {
+      try {
+        const { dateStart } = getDateRangeParams(appliedFilters);
+        const result = await getAppelsParSource(dateStart);
+        setAppelsData(result.appels || []);
+      } catch (error) {
+        console.error("Error fetching appels:", error);
+        setAppelsData([]);
+      }
+    };
+
+    fetchAppels();
   }, [appliedFilters, getDateRangeParams]);
 
   // Helper: find matching call for a door opening
@@ -651,8 +669,9 @@ const OuverturePorte = () => {
                     onClick={() => handleSelectOuverture(row)}
                     className={`group cursor-pointer transition-all ${selectedOuvertureId === row.id ? "ring-2 ring-inset ring-orange-200" : ""}`}
                     style={{
-                      backgroundColor:
-                        row.statut === "conforme" ? "#f0fdf4" : "#fef2f2",
+                      backgroundColor: row.isPointNoir
+                        ? "#fefce8"
+                        : row.statut === "conforme" ? "#f0fdf4" : "#fef2f2",
                     }}
                   >
                     <td className="px-6 py-2 whitespace-nowrap">
@@ -720,7 +739,14 @@ const OuverturePorte = () => {
                       )}
                     </td>
                     <td className="px-6 py-2">
-                      {row.statut === "conforme" ? (
+                      {row.isPointNoir ? (
+                        <div className="flex items-center gap-2">
+                          <div className="w-2 h-2 rounded-full bg-slate-900"></div>
+                          <span className="text-[10px] font-semibold uppercase tracking-tighter text-slate-900 inline-flex items-center gap-1">
+                            Point noir
+                          </span>
+                        </div>
+                      ) : row.statut === "conforme" ? (
                         <div className="flex items-center gap-2">
                           <div className="w-2 h-2 rounded-full bg-green-500"></div>
                           <span className="text-[10px] font-semibold uppercase tracking-tighter text-green-700 inline-flex items-center gap-1">
@@ -733,6 +759,11 @@ const OuverturePorte = () => {
                           <span className="text-[10px] font-semibold uppercase tracking-tighter text-red-700 inline-flex items-center gap-1">
                             <FiXCircle /> Non conforme
                           </span>
+                        </div>
+                      )}
+                      {row.isPointNoir && row.pointNoirPoi && (
+                        <div className="mt-1 text-[10px] font-semibold text-slate-600">
+                          POI: {row.pointNoirPoi}
                         </div>
                       )}
                     </td>

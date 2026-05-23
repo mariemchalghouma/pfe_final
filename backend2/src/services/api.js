@@ -154,6 +154,11 @@ export const groupsAPI = {
 export const arretsAPI = {
   getArrets: (params = {}) =>
     fetchWithAuth(`/api/arrets${buildQueryString(params)}`),
+  updateEtat: (data) =>
+    fetchWithAuth("/api/arrets/etat", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
 };
 
 // Carburant API

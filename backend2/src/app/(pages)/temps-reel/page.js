@@ -55,6 +55,7 @@ const rowKey = (item) => [
 
 const getVisualStatus = (camion) => {
   if (camion.statut === 'en_route') return 'en_route';
+  if (camion.arretStatus === 'point_noir') return 'arrete_point_noir';
   if (camion.arretStatus === 'non_conforme') return 'arrete_non_conforme';
   return 'arrete_conforme';
 };
@@ -72,6 +73,13 @@ const getStatusTheme = (visualStatus) => {
       color: '#ef4444',
       badgeClass: 'bg-red-50 text-red-600 border border-red-200',
       label: 'Arrete non conforme',
+    };
+  }
+  if (visualStatus === 'arrete_point_noir') {
+    return {
+      color: '#0f172a',
+      badgeClass: 'bg-slate-100 text-slate-900 border border-slate-300',
+      label: 'Arrete point noir',
     };
   }
   return {
@@ -143,14 +151,26 @@ export default function TempsReelPage() {
           acc[key] = {
             conforme: 0,
             nonConforme: 0,
+            pointNoir: 0,
             latestStatus: stop.status || null,
             latestPoiName: cleanValue(stop.poiPlanning),
             latestAddress: cleanValue(stop.poiGps),
+            latestPointNoirPoi: cleanValue(stop.pointNoirPoi || stop.poiPlanning),
+            latestPointNoirAddress: cleanValue(stop.poiGps),
           };
         }
 
-        if (stop.status === 'non_conforme') acc[key].nonConforme += 1;
-        else if (stop.status === 'conforme') acc[key].conforme += 1;
+        if (stop.isPointNoir) {
+          acc[key].pointNoir += 1;
+          if (!acc[key].latestPointNoirPoi) {
+            acc[key].latestPointNoirPoi = cleanValue(stop.pointNoirPoi || stop.poiPlanning);
+            acc[key].latestPointNoirAddress = cleanValue(stop.poiGps);
+          }
+        } else if (stop.status === 'non_conforme') {
+          acc[key].nonConforme += 1;
+        } else if (stop.status === 'conforme') {
+          acc[key].conforme += 1;
+        }
         return acc;
       }, {});
 
@@ -161,11 +181,20 @@ export default function TempsReelPage() {
         let arretStatus = null;
         let arretConformeNom = null;
         let arretConformeAdresse = null;
+        let arretPointNoirPoi = null;
+        let arretPointNoirAdresse = null;
         if (truck.statut !== 'en_route') {
-          arretStatus = stopInfo.nonConforme > 0 ? 'non_conforme' : 'conforme';
+          arretStatus = stopInfo.pointNoir > 0
+            ? 'point_noir'
+            : stopInfo.nonConforme > 0
+              ? 'non_conforme'
+              : 'conforme';
           if (arretStatus === 'conforme' && stopInfo.latestStatus === 'conforme') {
             arretConformeNom = stopInfo.latestPoiName || null;
             arretConformeAdresse = stopInfo.latestAddress || null;
+          } else if (arretStatus === 'point_noir') {
+            arretPointNoirPoi = stopInfo.latestPointNoirPoi || null;
+            arretPointNoirAdresse = stopInfo.latestPointNoirAddress || null;
           }
         }
 
@@ -174,6 +203,8 @@ export default function TempsReelPage() {
           arretStatus,
           arretConformeNom,
           arretConformeAdresse,
+          arretPointNoirPoi,
+          arretPointNoirAdresse,
           visualStatus: getVisualStatus({ ...truck, arretStatus }),
         };
       });
@@ -217,6 +248,7 @@ export default function TempsReelPage() {
     moving: filteredCamions.filter((c) => c.visualStatus === 'en_route').length,
     stoppedConforme: filteredCamions.filter((c) => c.visualStatus === 'arrete_conforme').length,
     stoppedNonConforme: filteredCamions.filter((c) => c.visualStatus === 'arrete_non_conforme').length,
+    stoppedPointNoir: filteredCamions.filter((c) => c.visualStatus === 'arrete_point_noir').length,
   }), [filteredCamions]);
 
   const clusters = useMemo(() => {
@@ -281,6 +313,7 @@ export default function TempsReelPage() {
             <span className="px-2 py-1 rounded-lg bg-green-50 text-green-700 border border-green-200">🚚 En route: {stats.moving}</span>
             <span className="px-2 py-1 rounded-lg bg-orange-50 text-orange-700 border border-orange-200">⏸ Conforme: {stats.stoppedConforme}</span>
             <span className="px-2 py-1 rounded-lg bg-red-50 text-red-700 border border-red-200">⏸ Non conforme: {stats.stoppedNonConforme}</span>
+            <span className="px-2 py-1 rounded-lg bg-slate-100 text-slate-900 border border-slate-300">⛔ Point noir: {stats.stoppedPointNoir}</span>
           </div>
         </div>
 
@@ -302,6 +335,8 @@ export default function TempsReelPage() {
                   <p className="text-sm text-orange-500 flex items-center gap-1 mt-0.5"><FiMapPin className="text-xs" /> {c.lat != null && c.lng != null ? `${c.lat.toFixed(4)}, ${c.lng.toFixed(4)}` : 'Position indisponible'}</p>
                   {c.visualStatus === 'arrete_conforme' && c.arretConformeNom && <p className="text-sm text-orange-700 mt-0.5">Arret: {c.arretConformeNom}</p>}
                   {c.visualStatus === 'arrete_conforme' && c.arretConformeAdresse && <p className="text-sm text-orange-700">Adresse: {c.arretConformeAdresse}</p>}
+                  {c.visualStatus === 'arrete_point_noir' && c.arretPointNoirPoi && <p className="text-sm text-slate-800 mt-0.5">Point noir: {c.arretPointNoirPoi}</p>}
+                  {c.visualStatus === 'arrete_point_noir' && c.arretPointNoirAdresse && <p className="text-sm text-slate-700">Adresse: {c.arretPointNoirAdresse}</p>}
                   <p className="text-sm text-gray-500 flex items-center gap-2 mt-1"><FiClock className="text-xs" /> {c.derniereMaj} · {c.vitesse} km/h</p>
                 </div>
                 <span className={`mt-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${theme.badgeClass}`}>
@@ -345,6 +380,8 @@ export default function TempsReelPage() {
                       <p className="text-gray-500">{truck.vitesse} km/h</p>
                       {truck.visualStatus === 'arrete_conforme' && truck.arretConformeNom && <p className="text-orange-700">Arret: {truck.arretConformeNom}</p>}
                       {truck.visualStatus === 'arrete_conforme' && truck.arretConformeAdresse && <p className="text-orange-700">Adresse: {truck.arretConformeAdresse}</p>}
+                      {truck.visualStatus === 'arrete_point_noir' && truck.arretPointNoirPoi && <p className="text-slate-800">Point noir: {truck.arretPointNoirPoi}</p>}
+                      {truck.visualStatus === 'arrete_point_noir' && truck.arretPointNoirAdresse && <p className="text-slate-700">Adresse: {truck.arretPointNoirAdresse}</p>}
                       <p className="font-semibold" style={{ color: theme.color }}>{theme.label}</p>
                     </div>
                   </Popup>
@@ -353,8 +390,9 @@ export default function TempsReelPage() {
             }
 
             const hasNonConforme = cluster.items.some((it) => (it.visualStatus || getVisualStatus(it)) === 'arrete_non_conforme');
+            const hasPointNoir = cluster.items.some((it) => (it.visualStatus || getVisualStatus(it)) === 'arrete_point_noir');
             const hasEnRoute = cluster.items.some((it) => (it.visualStatus || getVisualStatus(it)) === 'en_route');
-            const clusterColor = hasNonConforme ? '#ef4444' : hasEnRoute ? '#22c55e' : '#f97316';
+            const clusterColor = hasPointNoir ? '#0f172a' : hasNonConforme ? '#ef4444' : hasEnRoute ? '#22c55e' : '#f97316';
             const clusterIcon = createClusterIcon(cluster.items.length, clusterColor);
 
             return (

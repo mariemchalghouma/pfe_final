@@ -54,6 +54,14 @@ const numToDateTime = (dateKey, value) => {
   return new Date(`${dateKey}T${pad2(h)}:${pad2(m)}:00`);
 };
 
+const normalizeGroup = (value) =>
+  (value || "").toString().toLowerCase().replace(/\s+/g, " ").trim();
+
+const isPointNoirGroup = (value) => {
+  const group = normalizeGroup(value);
+  return group.includes("point") && group.includes("noir");
+};
+
 /**
  * Récupérer tous les arrêts de la table voyage_tracking_stops
  * Logique de conformité :
@@ -75,7 +83,7 @@ export const getStops = async ({
       (val || "").toString().replace(/\s+/g, "").toUpperCase();
 
     const poiResult = await pool.query(`
-      SELECT code, description as nom, lat, lng, rayon FROM poi
+      SELECT code, description as nom, lat, lng, rayon, groupe FROM poi
     `);
     const pois = poiResult.rows;
 
@@ -99,6 +107,10 @@ export const getStops = async ({
         ...poi,
         latNum: Number(poi.lat),
         lngNum: Number(poi.lng),
+        rayonNum:
+          poi.rayon !== null && poi.rayon !== undefined
+            ? Number(poi.rayon)
+            : null,
       }))
       .filter(
         (poi) => Number.isFinite(poi.latNum) && Number.isFinite(poi.lngNum),
@@ -106,6 +118,10 @@ export const getStops = async ({
 
     const poiByCode = new Map(
       parsedPois.map((poi) => [normalize(poi.code), poi]),
+    );
+
+    const pointNoirPois = parsedPois.filter((poi) =>
+      isPointNoirGroup(poi.groupe),
     );
 
     const voyagesByCamionDate = new Map();
@@ -286,6 +302,25 @@ export const getStops = async ({
         });
       }
 
+      let pointNoirMatch = null;
+      if (hasRefCoords && pointNoirPois.length > 0) {
+        pointNoirPois.forEach((poi) => {
+          const dist = calculateDistance(
+            refLat,
+            refLng,
+            poi.latNum,
+            poi.lngNum,
+          );
+          const poiRayon =
+            Number.isFinite(poi.rayonNum) && poi.rayonNum !== null
+              ? Math.max(0, poi.rayonNum)
+              : rayon;
+          if (dist <= poiRayon && (!pointNoirMatch || dist < pointNoirMatch.dist)) {
+            pointNoirMatch = { poi, dist, rayon: poiRayon };
+          }
+        });
+      }
+
       // Vérifier si l'arrêt était planifié (camion + date)
       // Si plusieurs voyages le même jour pour le même camion, matcher par POI programmé le plus proche
       const stopCamionNorm = normalize(row.camion);
@@ -352,6 +387,12 @@ export const getStops = async ({
 
       const nearestDistanceMeters =
         minDistance === Infinity ? null : Math.round(minDistance);
+            const pointNoirDistanceMeters = pointNoirMatch
+              ? Math.round(pointNoirMatch.dist)
+              : null;
+            const pointNoirRayonMeters = pointNoirMatch
+              ? Math.round(pointNoirMatch.rayon)
+              : null;
       const plannedDistanceMeters =
         plannedDistance === Infinity ? null : Math.round(plannedDistance);
       const plannedRayonMeters = Number.isFinite(plannedPoiRayon)
@@ -368,6 +409,7 @@ export const getStops = async ({
       const calculatedEtat = isConformeCalculated ? "conforme" : "non_conforme";
       const etat = row.db_etat || calculatedEtat;
       const isConforme = etat === "conforme";
+      const isPointNoir = Boolean(pointNoirMatch);
       const needsUpdate = !row.db_etat;
 
       let destinationName = "-";
@@ -431,7 +473,14 @@ export const getStops = async ({
         distance_poi_proche: nearestDistanceMeters,
         distance_poi_programme: plannedDistanceMeters,
         rayon_poi_programme: plannedRayonMeters,
-        action: isConforme ? null : "ajouter_poi",
+        action: isConforme || isPointNoir ? null : "ajouter_poi",
+        isPointNoir,
+        pointNoirPoi: pointNoirMatch
+          ? `${pointNoirMatch.poi.code} - ${pointNoirMatch.poi.nom}`
+          : null,
+        pointNoirGroupe: pointNoirMatch?.poi?.groupe || null,
+        distance_point_noir: pointNoirDistanceMeters,
+        rayon_point_noir: pointNoirRayonMeters,
         validatedPois: [],
         nextDestination: null,
         _voyageKey: voyageKeyForValidation,
@@ -555,6 +604,55 @@ export const getStops = async ({
       {
         success: false,
         message: "Erreur lors de la récupération des arrêts",
+        error:
+          process.env.NODE_ENV === "development" ? error.message : undefined,
+      },
+      { status: 500 },
+    );
+  }
+};
+
+export const updateStopEtat = async (request) => {
+  try {
+    const body = await request.json();
+    const rowCtid = body?.row_ctid || body?.rowCtid || body?.id || null;
+    const rawEtat = body?.etat ?? body?.status ?? null;
+
+    if (!rowCtid) {
+      return Response.json(
+        { success: false, message: "Identifiant d'arrêt manquant." },
+        { status: 400 },
+      );
+    }
+
+    const normalizedEtat =
+      rawEtat === null || rawEtat === undefined || rawEtat === ""
+        ? null
+        : String(rawEtat).toLowerCase().trim();
+
+    const allowedEtats = new Set(["conforme", "non_conforme", null]);
+    if (!allowedEtats.has(normalizedEtat)) {
+      return Response.json(
+        { success: false, message: "Etat invalide." },
+        { status: 400 },
+      );
+    }
+
+    const result = await pool.query(
+      "UPDATE voyage_tracking_stops SET etat = $1 WHERE ctid::text = $2",
+      [normalizedEtat, rowCtid],
+    );
+
+    return Response.json({
+      success: true,
+      updated: result.rowCount,
+    });
+  } catch (error) {
+    console.error("Error updateStopEtat:", error);
+    return Response.json(
+      {
+        success: false,
+        message: "Erreur lors de la mise à jour de l'arrêt",
         error:
           process.env.NODE_ENV === "development" ? error.message : undefined,
       },
