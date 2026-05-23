@@ -470,12 +470,7 @@ const Arrets = () => {
                 ✓ POI validés: {visitedPois.map((poi) => poi.label || poi.code).join(", ")}
               </>
             )}
-            {arret.nextDestination && (
-              <>
-                <br />
-                ➜ Prochaine destination: {arret.nextDestination}
-              </>
-            )}
+            
           </>
         ),
       },
@@ -515,12 +510,7 @@ const Arrets = () => {
                 ✓ POI validés: {visitedPois.map((poi) => poi.label || poi.code).join(", ")}
               </>
             )}
-            {a.nextDestination && (
-              <>
-                <br />
-                ➜ Prochaine destination: {a.nextDestination}
-              </>
-            )}
+            
           </>
         ),
       };
@@ -1011,11 +1001,7 @@ const Arrets = () => {
                           <span className="max-w-[150px] truncate text-[12px] font-semibold tracking-tight text-gray-600">
                             {arret.destination_programmee || "-"}
                           </span>
-                          {arret.nextDestination && (
-                            <span className="mt-1 text-[10px] font-semibold text-blue-600">
-                              Prochaine: {arret.nextDestination}
-                            </span>
-                          )}
+                          
                         </div>
                       </td>
                       <td className="px-6 py-2">
