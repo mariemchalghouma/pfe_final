@@ -201,9 +201,47 @@ export const getCamionsTempsReel = async (date) => {
 
     // Récupérer les POI pour le calcul de conformité
     const poiResult = await pool.query(`
-      SELECT code, description AS nom, lat, lng FROM poi
+      SELECT code, description AS nom, lat, lng, rayon, groupe FROM poi
     `);
-    const pois = poiResult.rows;
+
+    const DEFAULT_RAYON_METRES = 10;
+    const normalizeGroup = (value) =>
+      (value || "").toString().toLowerCase().replace(/\s+/g, " ").trim();
+    const isPointNoirGroup = (value) => {
+      const group = normalizeGroup(value);
+      return group.includes("point") && group.includes("noir");
+    };
+
+    const parsedPois = (poiResult.rows || [])
+      .map((poi) => ({
+        ...poi,
+        latNum: Number(poi.lat),
+        lngNum: Number(poi.lng),
+        rayonNum:
+          poi.rayon !== null && poi.rayon !== undefined
+            ? Number(poi.rayon)
+            : null,
+      }))
+      .filter((poi) => Number.isFinite(poi.latNum) && Number.isFinite(poi.lngNum));
+
+    const pois = parsedPois;
+    const pointNoirPois = parsedPois.filter((poi) => isPointNoirGroup(poi.groupe));
+
+    const findPointNoirMatch = (lat, lng) => {
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+      let match = null;
+      pointNoirPois.forEach((poi) => {
+        const dist = calculateDistance(lat, lng, poi.latNum, poi.lngNum);
+        const rayon =
+          poi.rayonNum !== null && !Number.isNaN(poi.rayonNum)
+            ? poi.rayonNum
+            : DEFAULT_RAYON_METRES;
+        if (dist <= rayon && (!match || dist < match.dist)) {
+          match = { poi, dist, rayon };
+        }
+      });
+      return match;
+    };
 
     const toHour = (val) => {
       if (val === null || val === undefined) return null;
@@ -373,9 +411,47 @@ export const getCamionsGantt = async (date) => {
 
     // 3) POI pour le calcul de conformité
     const poiResult = await pool.query(`
-      SELECT code, description AS nom, lat, lng FROM poi
+      SELECT code, description AS nom, lat, lng, rayon, groupe FROM poi
     `);
-    const pois = poiResult.rows;
+
+    const DEFAULT_RAYON_METRES = 10;
+    const normalizeGroup = (value) =>
+      (value || "").toString().toLowerCase().replace(/\s+/g, " ").trim();
+    const isPointNoirGroup = (value) => {
+      const group = normalizeGroup(value);
+      return group.includes("point") && group.includes("noir");
+    };
+
+    const parsedPois = (poiResult.rows || [])
+      .map((poi) => ({
+        ...poi,
+        latNum: Number(poi.lat),
+        lngNum: Number(poi.lng),
+        rayonNum:
+          poi.rayon !== null && poi.rayon !== undefined
+            ? Number(poi.rayon)
+            : null,
+      }))
+      .filter((poi) => Number.isFinite(poi.latNum) && Number.isFinite(poi.lngNum));
+
+    const pois = parsedPois;
+    const pointNoirPois = parsedPois.filter((poi) => isPointNoirGroup(poi.groupe));
+
+    const findPointNoirMatch = (lat, lng) => {
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+      let match = null;
+      pointNoirPois.forEach((poi) => {
+        const dist = calculateDistance(lat, lng, poi.latNum, poi.lngNum);
+        const rayon =
+          poi.rayonNum !== null && !Number.isNaN(poi.rayonNum)
+            ? poi.rayonNum
+            : DEFAULT_RAYON_METRES;
+        if (dist <= rayon && (!match || dist < match.dist)) {
+          match = { poi, dist, rayon };
+        }
+      });
+      return match;
+    };
 
     // 4) Ravitaillements
     const ravitResult = await pool.query(
@@ -584,13 +660,13 @@ export const getCamionsGantt = async (date) => {
       // Find nearest POI
       let minDistance = Infinity;
       let nearestPoi = null;
-      if (refLat && refLng) {
+      if (Number.isFinite(refLat) && Number.isFinite(refLng)) {
         pois.forEach((poi) => {
           const dist = calculateDistance(
             refLat,
             refLng,
-            parseFloat(poi.lat),
-            parseFloat(poi.lng),
+            poi.latNum,
+            poi.lngNum,
           );
           if (dist < minDistance) {
             minDistance = dist;
@@ -608,13 +684,21 @@ export const getCamionsGantt = async (date) => {
 
       // Conforme = distance ≤ 10m AND planned
       const isConformeCalculated = minDistance <= 10 && isPlanned;
-      const isConforme = stop.db_etat ? (stop.db_etat === "conforme") : isConformeCalculated;
+      const isConforme = stop.db_etat
+        ? stop.db_etat === "conforme"
+        : isConformeCalculated;
+
+      const pointNoirMatch = findPointNoirMatch(refLat, refLng);
 
       return {
         type: isConforme ? "stop_conforme" : "stop_non_conforme",
         poiName: nearestPoi ? `${nearestPoi.code} - ${nearestPoi.nom}` : null,
         distance: minDistance !== Infinity ? Math.round(minDistance) : null,
         conforme: isConforme,
+        isPointNoir: Boolean(pointNoirMatch),
+        pointNoirPoi: pointNoirMatch
+          ? `${pointNoirMatch.poi.code} - ${pointNoirMatch.poi.nom}`
+          : null,
       };
     };
 
@@ -730,6 +814,8 @@ export const getCamionsGantt = async (date) => {
           poiName: classification.poiName,
           distance: classification.distance,
           conforme: classification.conforme,
+          isPointNoir: classification.isPointNoir,
+          pointNoirPoi: classification.pointNoirPoi,
         });
       });
 
@@ -768,7 +854,7 @@ export const getCamionsGantt = async (date) => {
             pois.forEach((poi) => {
               const dist = calculateDistance(
                 o.lat, o.lng,
-                parseFloat(poi.lat), parseFloat(poi.lng)
+                poi.latNum, poi.lngNum,
               );
               if (dist < minDistance) {
                 minDistance = dist;
@@ -781,6 +867,8 @@ export const getCamionsGantt = async (date) => {
           isConforme = minDistance <= 10 && isPlanned;
         }
 
+        const pointNoirMatch = findPointNoirMatch(o.lat, o.lng);
+
         events.push({
           type: "ouverture_porte",
           start: clampedStart,
@@ -792,6 +880,10 @@ export const getCamionsGantt = async (date) => {
           poiName: nearestPoi ? `${nearestPoi.code} - ${nearestPoi.nom}` : null,
           distance: minDistance !== Infinity ? Math.round(minDistance) : null,
           conforme: isConforme,
+          isPointNoir: Boolean(pointNoirMatch),
+          pointNoirPoi: pointNoirMatch
+            ? `${pointNoirMatch.poi.code} - ${pointNoirMatch.poi.nom}`
+            : null,
           tempOuv: o.tempOuv,
           tempVar: o.tempVar,
           tempFer: o.tempFer,
@@ -905,8 +997,8 @@ export const getCamionsGantt = async (date) => {
               ? {
                   code: poiMatch.code,
                   nom: poiMatch.nom,
-                  lat: parseFloat(poiMatch.lat),
-                  lng: parseFloat(poiMatch.lng),
+                  lat: poiMatch.latNum,
+                  lng: poiMatch.lngNum,
                 }
               : null,
             visited: false,

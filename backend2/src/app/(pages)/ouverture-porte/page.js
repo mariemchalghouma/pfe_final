@@ -35,6 +35,13 @@ const formatDureeMinutes = (minutes) => {
   return `${Math.round(totalMinutes)} min`;
 };
 
+const normalizeCoordinate = (value) => {
+  if (value === null || value === undefined) return null;
+  const raw = typeof value === "string" ? value.trim().replace(",", ".") : value;
+  const numberValue = Number(raw);
+  return Number.isFinite(numberValue) ? numberValue : null;
+};
+
 const getToday = () => new Date().toISOString().split("T")[0];
 
 const getInitialFilters = (today) => ({
@@ -193,13 +200,18 @@ const OuverturePorte = () => {
           const distancePoiMetres =
             item.distancePoiMetres ?? item.distance_m ?? null;
           const dureeMinutes = item.dureeMinutes ?? item.duree_minutes ?? null;
-          const lat = item.lat ?? null;
-          const lng = item.lng ?? null;
+          const lat = normalizeCoordinate(item.lat ?? item.latitude);
+          const lng = normalizeCoordinate(item.lng ?? item.longitude);
           const voyagePlanifie = Boolean(
             item.voyagePlanifie ?? item.voyage_planifie,
           );
           const isPointNoir = Boolean(item.isPointNoir);
           const pointNoirPoi = item.pointNoirPoi ?? null;
+          const pointNoirDistanceMetres =
+            item.distancePointNoirMetres ??
+            item.point_noir_distance_m ??
+            item.pointNoirDistanceMetres ??
+            null;
           const statut =
             item.statut ??
             (voyagePlanifie &&
@@ -223,6 +235,7 @@ const OuverturePorte = () => {
             ouverture: "Oui",
             isPointNoir,
             pointNoirPoi,
+            pointNoirDistanceMetres,
             dateOuv: dateOuv
               ? dateOuv.toLocaleTimeString("fr-FR", {
                 hour: "2-digit",
@@ -389,15 +402,34 @@ const OuverturePorte = () => {
 
   const handleOpenFullMap = () => {
     const positions = filteredData
-      .filter((item) => item.lat !== null && item.lng !== null)
-      .map((item) => ({
-        id: item.id,
-        lat: item.lat,
-        lng: item.lng,
-        label: item.camion,
-        status: item.statut,
-        info: `${item.localisation} · ⏳ ${item.duree}`,
-      }));
+      .filter(
+        (item) => Number.isFinite(item.lat) && Number.isFinite(item.lng),
+      )
+      .map((item) => {
+        const latStr = item.lat.toFixed(6);
+        const lngStr = item.lng.toFixed(6);
+        return {
+          id: item.id,
+          lat: item.lat,
+          lng: item.lng,
+          label: item.camion,
+          status: item.statut,
+          color: item.isPointNoir ? "#0f172a" : undefined,
+          info: (
+            <>
+              📍 {item.localisation} · ⏳ {item.duree}
+              <br />
+              Lat: {latStr}, Lng: {lngStr}
+              {item.isPointNoir && item.pointNoirPoi && (
+                <>
+                  <br />
+                  Point noir: {item.pointNoirPoi}
+                </>
+              )}
+            </>
+          ),
+        };
+      });
     if (positions.length === 0) return;
     setMapPositions(positions);
     setIsMapOpen(true);
@@ -405,7 +437,12 @@ const OuverturePorte = () => {
 
   const handleSelectOuverture = (ouverture) => {
     setSelectedOuvertureId(ouverture.id);
-    if (ouverture.lat === null || ouverture.lng === null) return;
+    if (!Number.isFinite(ouverture.lat) || !Number.isFinite(ouverture.lng)) {
+      alert("Ce point n'a pas de coordonnees valides.");
+      return;
+    }
+    const latStr = ouverture.lat.toFixed(6);
+    const lngStr = ouverture.lng.toFixed(6);
     setMapPositions([
       {
         id: ouverture.id,
@@ -413,7 +450,20 @@ const OuverturePorte = () => {
         lng: ouverture.lng,
         label: ouverture.camion,
         status: ouverture.statut,
-        info: `${ouverture.localisation} · ⏳ ${ouverture.duree}`,
+        color: ouverture.isPointNoir ? "#0f172a" : undefined,
+        info: (
+          <>
+            📍 {ouverture.localisation} · ⏳ {ouverture.duree}
+            <br />
+            Lat: {latStr}, Lng: {lngStr}
+            {ouverture.isPointNoir && ouverture.pointNoirPoi && (
+              <>
+                <br />
+                Point noir: {ouverture.pointNoirPoi}
+              </>
+            )}
+          </>
+        ),
       },
     ]);
     setIsMapOpen(true);
@@ -741,9 +791,9 @@ const OuverturePorte = () => {
                     <td className="px-6 py-2">
                       {row.isPointNoir ? (
                         <div className="flex items-center gap-2">
-                          <div className="w-2 h-2 rounded-full bg-slate-900"></div>
-                          <span className="text-[10px] font-semibold uppercase tracking-tighter text-slate-900 inline-flex items-center gap-1">
-                            Point noir
+                          <div className="w-2 h-2 rounded-full bg-red-900"></div>
+                          <span className="text-[10px] font-semibold uppercase tracking-tighter text-red-900 inline-flex items-center gap-1 rounded-full bg-red-50 border border-red-200 px-2 py-0.5">
+                            Non conforme (Point noir)
                           </span>
                         </div>
                       ) : row.statut === "conforme" ? (
@@ -763,7 +813,12 @@ const OuverturePorte = () => {
                       )}
                       {row.isPointNoir && row.pointNoirPoi && (
                         <div className="mt-1 text-[10px] font-semibold text-slate-600">
-                          POI: {row.pointNoirPoi}
+                          Point noir: {row.pointNoirPoi}
+                          {row.pointNoirDistanceMetres != null && (
+                            <span className="text-slate-500">
+                              {` (${Number(row.pointNoirDistanceMetres).toFixed(0)} m)`}
+                            </span>
+                          )}
                         </div>
                       )}
                     </td>

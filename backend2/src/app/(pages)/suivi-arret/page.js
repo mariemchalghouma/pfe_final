@@ -14,7 +14,7 @@ import {
 } from "react-icons/fi";
 import PoiModal from "@/components/PoiModal";
 import MapModal from "@/components/map/MapModal";
-import { poiAPI, arretsAPI } from "@/services/api";
+import { poiAPI, arretsAPI, groupsAPI } from "@/services/api";
 import { getAppelsParSource } from "@/lib/api";
 import {
   LineChart,
@@ -166,18 +166,16 @@ const Arrets = () => {
   const [hasMore, setHasMore] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
 
-  useEffect(() => {
-    const fetchGroups = async () => {
-      const initialGroups = [
-        { id: "g1", nom: "Dépôt", couleur: "#fbbf24" },
-        { id: "g2", nom: "Client Interne", couleur: "#f97316" },
-        { id: "g3", nom: "Client Externe", couleur: "#ef4444" },
-        { id: "g4", nom: "Station", couleur: "#a855f7" },
-        { id: "g5", nom: "Zone Industrielle", couleur: "#06b6d4" },
-      ];
-      setGroups(initialGroups);
-    };
+  const fetchGroups = async () => {
+    try {
+      const response = await groupsAPI.getGroups();
+      setGroups(response.data || []);
+    } catch (error) {
+      console.error("Failed to fetch groups:", error);
+    }
+  };
 
+  useEffect(() => {
     fetchGroups();
   }, []);
 
@@ -451,6 +449,7 @@ const Arrets = () => {
     setSelectedArretId(arret.id);
     const latStr = parseFloat(arret.lat).toFixed(6);
     const lngStr = parseFloat(arret.lng).toFixed(6);
+    const isPointNoir = Boolean(arret.isPointNoir);
     const visitedPois = Array.isArray(arret.validatedPois) ? arret.validatedPois : [];
     setMapPositions([
       {
@@ -459,11 +458,18 @@ const Arrets = () => {
         lng: arret.lng,
         label: arret.camion,
         status: arret.status,
+        color: isPointNoir ? "#0f172a" : undefined,
         info: (
           <>
             🕒 {arret.date} · ⏳ {arret.duree}
             <br />
             📍 Lat: {latStr}, Lng: {lngStr}
+            {isPointNoir && arret.pointNoirPoi && (
+              <>
+                <br />
+                Point noir: {arret.pointNoirPoi}
+              </>
+            )}
             {visitedPois.length > 0 && (
               <>
                 <br />
@@ -492,6 +498,7 @@ const Arrets = () => {
     const positions = filteredData.map((a) => {
       const latStr = parseFloat(a.lat).toFixed(6);
       const lngStr = parseFloat(a.lng).toFixed(6);
+      const isPointNoir = Boolean(a.isPointNoir);
       const visitedPois = Array.isArray(a.validatedPois) ? a.validatedPois : [];
       return {
         id: a.id,
@@ -499,11 +506,18 @@ const Arrets = () => {
         lng: a.lng,
         label: a.camion,
         status: a.status,
+        color: isPointNoir ? "#0f172a" : undefined,
         info: (
           <>
             🕒 {a.date} · ⏳ {a.duree}
             <br />
             📍 Lat: {latStr}, Lng: {lngStr}
+            {isPointNoir && a.pointNoirPoi && (
+              <>
+                <br />
+                Point noir: {a.pointNoirPoi}
+              </>
+            )}
             {visitedPois.length > 0 && (
               <>
                 <br />
@@ -532,23 +546,42 @@ const Arrets = () => {
     setAppliedFilters(initialFilters);
   };
 
+  const isPointNoirGroup = (groupName) =>
+    /point.*noir/.test(String(groupName || "").toLowerCase());
+
   const handleSavePoi = async (poiData) => {
     try {
+      const groupExists = groups.some((g) => g.nom === poiData.groupe);
+      if (!groupExists && poiData.groupe) {
+        const couleur = "#fbbf24";
+        await groupsAPI.createGroup({
+          nom: poiData.groupe,
+          description: poiData.groupeDescription || "",
+          couleur,
+        });
+        await fetchGroups();
+      }
+
       await poiAPI.createPOI(poiData);
       let autoValidationFailed = false;
+      let autoValidationSkipped = false;
 
       if (poiModalData?.id) {
-        try {
-          const updateRes = await arretsAPI.updateEtat({
-            row_ctid: poiModalData.id,
-            etat: "conforme",
-          });
-          if (!updateRes?.success || Number(updateRes?.updated || 0) === 0) {
+        if (isPointNoirGroup(poiData.groupe)) {
+          autoValidationSkipped = true;
+        } else {
+          try {
+            const updateRes = await arretsAPI.updateEtat({
+              row_ctid: poiModalData.id,
+              etat: "conforme",
+            });
+            if (!updateRes?.success || Number(updateRes?.updated || 0) === 0) {
+              autoValidationFailed = true;
+            }
+          } catch (error) {
             autoValidationFailed = true;
+            console.error("Failed to update arret etat:", error);
           }
-        } catch (error) {
-          autoValidationFailed = true;
-          console.error("Failed to update arret etat:", error);
         }
       }
 
@@ -557,7 +590,9 @@ const Arrets = () => {
       alert(
         autoValidationFailed
           ? "POI ajouté, mais l'arrêt n'a pas pu être validé automatiquement."
-          : "POI ajouté avec succès !",
+          : autoValidationSkipped
+            ? "POI point noir ajouté. L'arrêt reste non conforme."
+            : "POI ajouté avec succès !",
       );
       window.location.reload();
     } catch (error) {
@@ -1186,13 +1221,18 @@ const Arrets = () => {
         </div>
       </div>
 
-      <PoiModal
-        isOpen={showPoiModal}
-        onClose={() => setShowPoiModal(false)}
-        initialData={poiModalData}
-        groups={groups}
-        onSubmit={handleSavePoi}
-      />
+      {showPoiModal && (
+        <PoiModal
+          isOpen={showPoiModal}
+          onClose={() => {
+            setShowPoiModal(false);
+            setPoiModalData(null);
+          }}
+          initialData={poiModalData}
+          groups={groups}
+          onSubmit={handleSavePoi}
+        />
+      )}
 
       <MapModal
         isOpen={isMapOpen}

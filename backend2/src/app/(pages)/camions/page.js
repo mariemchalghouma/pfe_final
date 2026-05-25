@@ -148,6 +148,32 @@ const segmentColors = {
     icon: null,
     dot: "#cbd5e1",
   },
+  point_noir: {
+    bg: "#0f172a",
+    label: "Point noir",
+    text: "white",
+    icon: FaExclamationTriangle,
+    dot: "#0f172a",
+  },
+};
+
+const POINT_NOIR_COLOR = "#0f172a";
+
+const getSegmentStyle = (segment) => {
+  const base = segmentColors[segment.type] || segmentColors.inactive;
+  if (!segment?.isPointNoir) return base;
+  const isStopPoint = ["stop_conforme", "stop_non_conforme", "stop", "stop_long"].includes(
+    segment.type,
+  );
+  const label = isStopPoint ? "Arrêt (Point noir)" : "Point noir";
+
+  return {
+    ...base,
+    bg: POINT_NOIR_COLOR,
+    dot: POINT_NOIR_COLOR,
+    text: "white",
+    label: segment.type === "ouverture_porte" ? "Ouverture (Point noir)" : label,
+  };
 };
 
 const SITE_OPTIONS = [
@@ -344,7 +370,7 @@ const buildVoyageMapPoints = (voyageData, trajetPoints = [], ganttDate) => {
     const lat = toNumber(seg.lat);
     const lng = toNumber(seg.lng);
     if (lat == null || lng == null) return;
-    const segColor = segmentColors[seg.type] || segmentColors.inactive;
+    const segColor = getSegmentStyle(seg);
 
     // Skip if this segment's position overlaps with a planned POI
     const overlapsPoiPoint = points.some(
@@ -353,12 +379,18 @@ const buildVoyageMapPoints = (voyageData, trajetPoints = [], ganttDate) => {
     );
     if (overlapsPoiPoint) return;
 
+    const infoParts = [
+      `${fmtTime(seg.start)} → ${fmtTime(seg.end)}`,
+      seg.poiName ? seg.poiName : null,
+      seg.isPointNoir && seg.pointNoirPoi ? `Point noir: ${seg.pointNoirPoi}` : null,
+    ].filter(Boolean);
+
     points.push({
       id: `evt-${idx}`,
       lat,
       lng,
       label: segColor.label,
-      info: `${fmtTime(seg.start)} → ${fmtTime(seg.end)}${seg.poiName ? ` | ${seg.poiName}` : ""}`,
+      info: infoParts.join(" | "),
       color: segColor.bg,
       markerType: "event",
     });
@@ -370,7 +402,8 @@ const buildVoyageMapPoints = (voyageData, trajetPoints = [], ganttDate) => {
 /* ═══ POPOVER COMPONENT ═══ */
 const SegmentPopover = ({ segment, position, onClose }) => {
   const ref = useRef(null);
-  const segColor = segmentColors[segment.type] || segmentColors.inactive;
+  const segColor = getSegmentStyle(segment);
+  const isPointNoir = Boolean(segment.isPointNoir);
   const SegIcon = segColor.icon;
 
   useEffect(() => {
@@ -549,7 +582,18 @@ const SegmentPopover = ({ segment, position, onClose }) => {
               className="flex items-center gap-1.5"
               style={{ marginTop: "4px" }}
             >
-              {segment.conforme ? (
+              {isPointNoir ? (
+                <>
+                  <FaTimesCircle
+                    style={{ color: segColor.bg, fontSize: "13px" }}
+                  />
+                  <span style={{ fontWeight: 700, color: segColor.bg }}>
+                    {segment.type === "ouverture_porte"
+                      ? "Point noir (Ouverture)"
+                      : "Point noir (Arrêt)"}
+                  </span>
+                </>
+              ) : segment.conforme ? (
                 <>
                   <FaCheckCircle
                     style={{ color: "#22c55e", fontSize: "13px" }}
@@ -568,6 +612,17 @@ const SegmentPopover = ({ segment, position, onClose }) => {
                   </span>
                 </>
               )}
+            </div>
+          )}
+          {isPointNoir && segment.pointNoirPoi && (
+            <div className="flex items-center gap-1.5">
+              <FiMapPin
+                style={{ color: POINT_NOIR_COLOR, flexShrink: 0, fontSize: "13px" }}
+              />
+              <span style={{ color: "#6b7280" }}>Point noir :</span>
+              <span style={{ fontWeight: 600, color: "#1a1a2e" }}>
+                {segment.pointNoirPoi}
+              </span>
             </div>
           )}
           {segment.type === "ouverture_porte" && (
@@ -809,7 +864,7 @@ const GanttBar = ({
             const end = new Date(seg.end).getTime();
             const leftPct = ((start - dayStart) / dayMs) * 100;
             const widthPct = Math.max(((end - start) / dayMs) * 100, 0.3);
-            const segColor = segmentColors[seg.type] || segmentColors.inactive;
+            const segColor = getSegmentStyle(seg);
             const duration = fmtDurationFromISO(seg.start, seg.end);
             const showLabel = widthPct > 2.5;
 
@@ -1466,7 +1521,7 @@ const SidePanel = ({ data, onClose, onShowMap, ganttDate }) => {
 
         <div className="space-y-0">
           {segments.map((seg, i) => {
-            const segColor = segmentColors[seg.type] || segmentColors.inactive;
+            const segColor = getSegmentStyle(seg);
             const dur =
               seg.duration ||
               Math.round((new Date(seg.end) - new Date(seg.start)) / 60000);
@@ -1906,6 +1961,7 @@ const Camions = () => {
                   "stop_non_conforme",
                   "ravitaillement",
                   "ouverture_porte",
+                  "point_noir",
                 ].includes(key),
               )
               .map(([key, val]) => (
