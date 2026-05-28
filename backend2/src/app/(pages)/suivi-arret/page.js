@@ -150,6 +150,40 @@ const parseSourceId = (sourceId) => {
   };
 };
 
+const normalizeSourceId = (value) => {
+  if (!value) return null;
+  const raw = String(value).trim();
+  if (!raw || !raw.includes("|")) return null;
+  const [camion, tsRaw] = raw.split("|", 2);
+  if (!camion || !tsRaw) return null;
+  const ts = tsRaw
+    .replace("T", " ")
+    .split(".")[0]
+    .replace(/Z$/, "")
+    .replace(/([+-]\d{2}:\d{2})$/, "")
+    .trim();
+  return `${camion}|${ts}`;
+};
+
+const formatSourceId = (camion, value) => {
+  if (!camion || !value) return null;
+  const dt = new Date(value);
+  if (!Number.isNaN(dt.getTime())) {
+    const iso = dt.toISOString().replace("T", " ").split(".")[0];
+    return `${camion}|${iso}`;
+  }
+  const raw = String(value).trim();
+  if (!raw) return null;
+  const ts = raw.replace("T", " ").split(".")[0];
+  return `${camion}|${ts}`;
+};
+
+const buildSourceKey = (table, sourceId) => {
+  const normalized = normalizeSourceId(sourceId);
+  if (!table || !normalized) return null;
+  return `${table}|${normalized}`;
+};
+
 const isStopCall = (appel) => {
   const sourceTable = (appel?.source_table || "").toString().toLowerCase().trim();
   const typeNc = (appel?.type_nc || "").toString().toLowerCase().trim();
@@ -346,6 +380,11 @@ const Arrets = () => {
 
     const stopMs = parseToMs(arret.beginstoptime || arret._stopStart || arret.date);
     const stopDateKey = toDateKey(arret.beginstoptime || arret.date);
+    const stopSourceId = formatSourceId(
+      camion,
+      arret.beginstoptime || arret._stopStart || arret.date,
+    );
+    const stopKey = buildSourceKey("voyage_tracking_stops", stopSourceId);
 
     const candidates = appelsData.filter((a) =>
       a?.session_id &&
@@ -354,6 +393,18 @@ const Arrets = () => {
     );
 
     if (!candidates.length) return null;
+
+    if (stopKey) {
+      const directMatch = candidates.find(
+        (a) => buildSourceKey(a.source_table, a.source_id) === stopKey,
+      );
+      if (directMatch) return directMatch;
+
+      const altMatch = candidates.find(
+        (a) => buildSourceKey(a.source_table_2, a.source_id_2) === stopKey,
+      );
+      if (altMatch) return altMatch;
+    }
 
     const MAX_DIFF_MS = 90 * 60 * 1000;
     if (stopMs != null) {

@@ -42,6 +42,78 @@ const normalizeCoordinate = (value) => {
   return Number.isFinite(numberValue) ? numberValue : null;
 };
 
+const normalizeCamion = (value) => (value || "").toString().trim();
+const normalizeCamionKey = (value) =>
+  (value || "").toString().replace(/\s+/g, "").toUpperCase();
+
+const parseToMs = (value) => {
+  if (!value) return null;
+  if (value instanceof Date) {
+    const ms = value.getTime();
+    return Number.isFinite(ms) ? ms : null;
+  }
+  const raw = String(value).trim();
+  if (!raw) return null;
+  const normalized = raw
+    .replace(" ", "T")
+    .replace(/([+-]\d{2})$/, "$1:00");
+  const ms = Date.parse(normalized);
+  return Number.isFinite(ms) ? ms : null;
+};
+
+
+const normalizeSourceId = (value) => {
+  if (!value) return null;
+  const raw = String(value).trim();
+  if (!raw || !raw.includes("|")) return null;
+  const [camion, tsRaw] = raw.split("|", 2);
+  if (!camion || !tsRaw) return null;
+  const camionKey = normalizeCamionKey(camion);
+  const ts = tsRaw
+    .replace("T", " ")
+    .split(".")[0]
+    .replace(/Z$/, "")
+    .replace(/([+-]\d{2}:?\d{2})$/, "")
+    .trim();
+  return `${camionKey}|${ts}`;
+};
+
+const formatLocalDateTime = (value) => {
+  const dt = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(dt.getTime())) return null;
+  const pad2 = (v) => String(v).padStart(2, "0");
+  return `${dt.getFullYear()}-${pad2(dt.getMonth() + 1)}-${pad2(dt.getDate())} ${pad2(dt.getHours())}:${pad2(dt.getMinutes())}:${pad2(dt.getSeconds())}`;
+};
+
+const formatSourceId = (camion, value) => {
+  if (!camion || !value) return null;
+  if (typeof value === "string") {
+    const raw = value.trim();
+    if (!raw) return null;
+    const looksIso = raw.includes("T") || /Z$/.test(raw) || /[+-]\d{2}:?\d{2}$/.test(raw);
+    if (looksIso) {
+      const localTs = formatLocalDateTime(raw);
+      if (localTs) return `${camion}|${localTs}`;
+    }
+    const ts = raw
+      .replace("T", " ")
+      .split(".")[0]
+      .replace(/Z$/, "")
+      .replace(/([+-]\d{2}:?\d{2})$/, "")
+      .trim();
+    return `${camion}|${ts}`;
+  }
+  const localTs = formatLocalDateTime(value);
+  if (localTs) return `${camion}|${localTs}`;
+  return null;
+};
+
+const buildSourceKey = (table, sourceId) => {
+  const normalized = normalizeSourceId(sourceId);
+  if (!table || !normalized) return null;
+  return `${table}|${normalized}`;
+};
+
 const getToday = () => new Date().toISOString().split("T")[0];
 
 const getInitialFilters = (today) => ({
@@ -236,6 +308,8 @@ const OuverturePorte = () => {
             isPointNoir,
             pointNoirPoi,
             pointNoirDistanceMetres,
+            dateOuvRaw: dateOuvSource || null,
+            dateFermRaw: dateFermSource || null,
             dateOuv: dateOuv
               ? dateOuv.toLocaleTimeString("fr-FR", {
                 hour: "2-digit",
@@ -283,34 +357,54 @@ const OuverturePorte = () => {
 
   // Helper: find matching call for a door opening
   const findAppelForPorte = (row) => {
-    const camion = (row.camion || '').trim();
-    const rowDate = row.dateOuvJour;
+    const camion = normalizeCamion(row.camion);
+    const camionKey = normalizeCamionKey(camion);
+    const doorMs = parseToMs(
+      row.dateOuvRaw || row.dateOuverture || row.date_ouverture || row.dateOuvJour,
+    );
+    const doorSourceId = formatSourceId(
+      camion,
+      row.dateOuvRaw || row.dateOuverture || row.date_ouverture || row.dateOuvJour,
+    );
+    const doorKey = buildSourceKey("voyagetracking_port_ouvert", doorSourceId);
 
-    // 1. Match direct via source_table_2 = 'voyagetracking_port_ouvert'
-    const directMatch = appelsData.find(a => {
-      const aCamion = (a.camion_id || '').trim();
-      const aDate = (a.ts_detection || a.date_appel || '').split('T')[0];
-      return aCamion === camion && aDate === rowDate && a.session_id &&
-        a.source_table_2 === 'voyagetracking_port_ouvert';
-    });
-    if (directMatch) return directMatch;
+    if (!doorKey) return null;
 
-    // 2. Match par type_nc contenant 'porte'
-    const typeMatch = appelsData.find(a => {
-      const aCamion = (a.camion_id || '').trim();
-      const aDate = (a.ts_detection || a.date_appel || '').split('T')[0];
-      const typeNc = (a.type_nc || '');
-      return aCamion === camion && aDate === rowDate && a.session_id &&
-        (typeNc.includes('porte') || typeNc.includes('arret_et_porte'));
-    });
-    if (typeMatch) return typeMatch;
+    const matchSecondary = appelsData.find(
+      (a) =>
+        a?.session_id &&
+        normalizeCamionKey(a.camion_id) === camionKey &&
+        buildSourceKey(a.source_table_2, a.source_id_2) === doorKey,
+    );
+    if (matchSecondary) return matchSecondary;
 
-    // 3. Fallback: any call for same camion+date
-    return appelsData.find(a => {
-      const aCamion = (a.camion_id || '').trim();
-      const aDate = (a.ts_detection || a.date_appel || '').split('T')[0];
-      return aCamion === camion && aDate === rowDate && a.session_id;
-    });
+    const matchPrimary = appelsData.find(
+      (a) =>
+        a?.session_id &&
+        normalizeCamionKey(a.camion_id) === camionKey &&
+        buildSourceKey(a.source_table, a.source_id) === doorKey,
+    );
+    if (matchPrimary) return matchPrimary;
+
+    const MAX_DIFF_MS = 30 * 60 * 1000;
+    if (doorMs != null) {
+      const fallbackMatch = appelsData.find((a) => {
+        if (!a?.session_id) return false;
+        if (normalizeCamionKey(a.camion_id) !== camionKey) return false;
+        const typeNc = String(a.type_nc || "").toLowerCase();
+        if (!typeNc.includes("arret_et_porte_ouverte")) return false;
+        const table2 = String(a.source_table_2 || "").toLowerCase().trim();
+        if (table2 !== "voyagetracking_port_ouvert") return false;
+        if (a.source_id_2) return false;
+
+        const appelMs = parseToMs(a.ts_detection || a.date_appel);
+        if (appelMs == null) return false;
+        return Math.abs(appelMs - doorMs) <= MAX_DIFF_MS;
+      });
+      if (fallbackMatch) return fallbackMatch;
+    }
+
+    return null;
   };
 
   const filteredData = useMemo(() => {
