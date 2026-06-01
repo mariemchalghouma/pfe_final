@@ -12,6 +12,8 @@ import {
   FiMessageSquare,
   FiHash,
   FiUser,
+  FiCheckCircle,
+  FiX,
 } from "react-icons/fi";
 
 /* ─── Statut Badge ─── */
@@ -64,6 +66,7 @@ export default function ReclamationsPage() {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [successMessage, setSuccessMessage] = useState("");
 
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
@@ -91,6 +94,15 @@ export default function ReclamationsPage() {
     fetchReclamations();
   }, []);
 
+  useEffect(() => {
+    if (successMessage) {
+      const timer = setTimeout(() => {
+        setSuccessMessage("");
+      }, 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [successMessage]);
+
   /* ─── Sort locally ─── */
   const processedData = useMemo(() => {
     let items = [...data];
@@ -113,6 +125,22 @@ export default function ReclamationsPage() {
 
   return (
     <div className="p-6 lg:p-8 max-w-[1440px] mx-auto space-y-6">
+      {successMessage && (
+        <div className="fixed top-6 right-6 z-[100] animate-slide-in-right flex items-center gap-3 rounded-xl bg-emerald-50 border border-emerald-200 px-5 py-3.5 shadow-lg shadow-emerald-100/50">
+          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-500">
+            <FiCheckCircle className="text-white" size={16} />
+          </div>
+          <span className="text-sm font-bold text-emerald-800">
+            {successMessage}
+          </span>
+          <button
+            onClick={() => setSuccessMessage("")}
+            className="ml-2 text-emerald-400 hover:text-emerald-600 transition-colors"
+          >
+            <FiX size={16} />
+          </button>
+        </div>
+      )}
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
         <div className="flex items-center justify-between border-b border-gray-100 px-5 py-4 bg-gray-50/50">
           <h2 className="text-base font-black text-gray-900 uppercase tracking-wide">

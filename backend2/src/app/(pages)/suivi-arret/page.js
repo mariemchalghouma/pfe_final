@@ -128,9 +128,7 @@ const parseToMs = (value) => {
   }
   const raw = String(value).trim();
   if (!raw) return null;
-  const normalized = raw
-    .replace(" ", "T")
-    .replace(/([+-]\d{2})$/, "$1:00");
+  const normalized = raw.replace(" ", "T").replace(/([+-]\d{2})$/, "$1:00");
   const ms = Date.parse(normalized);
   return Number.isFinite(ms) ? ms : null;
 };
@@ -185,7 +183,10 @@ const buildSourceKey = (table, sourceId) => {
 };
 
 const isStopCall = (appel) => {
-  const sourceTable = (appel?.source_table || "").toString().toLowerCase().trim();
+  const sourceTable = (appel?.source_table || "")
+    .toString()
+    .toLowerCase()
+    .trim();
   const typeNc = (appel?.type_nc || "").toString().toLowerCase().trim();
   return sourceTable === "voyage_tracking_stops" || typeNc.startsWith("arret");
 };
@@ -378,7 +379,9 @@ const Arrets = () => {
     const camion = normalizeCamion(arret.camion);
     if (!camion) return null;
 
-    const stopMs = parseToMs(arret.beginstoptime || arret._stopStart || arret.date);
+    const stopMs = parseToMs(
+      arret.beginstoptime || arret._stopStart || arret.date,
+    );
     const stopDateKey = toDateKey(arret.beginstoptime || arret.date);
     const stopSourceId = formatSourceId(
       camion,
@@ -386,10 +389,11 @@ const Arrets = () => {
     );
     const stopKey = buildSourceKey("voyage_tracking_stops", stopSourceId);
 
-    const candidates = appelsData.filter((a) =>
-      a?.session_id &&
-      normalizeCamion(a.camion_id) === camion &&
-      isStopCall(a)
+    const candidates = appelsData.filter(
+      (a) =>
+        a?.session_id &&
+        normalizeCamion(a.camion_id) === camion &&
+        isStopCall(a),
     );
 
     if (!candidates.length) return null;
@@ -411,7 +415,8 @@ const Arrets = () => {
       let best = null;
       for (const appel of candidates) {
         const parsed = parseSourceId(appel.source_id);
-        if (!parsed || parsed.camion !== camion || parsed.tsMs == null) continue;
+        if (!parsed || parsed.camion !== camion || parsed.tsMs == null)
+          continue;
         const diff = Math.abs(parsed.tsMs - stopMs);
         if (!best || diff < best.diff) best = { appel, diff };
       }
@@ -419,8 +424,8 @@ const Arrets = () => {
     }
 
     if (stopDateKey) {
-      const sameDay = candidates.filter((a) =>
-        toDateKey(a.ts_detection || a.date_appel) === stopDateKey
+      const sameDay = candidates.filter(
+        (a) => toDateKey(a.ts_detection || a.date_appel) === stopDateKey,
       );
       if (sameDay.length === 1) return sameDay[0];
       if (sameDay.length > 1 && stopMs != null) {
@@ -482,7 +487,8 @@ const Arrets = () => {
         extractSiteCode(arret.destination_programmee),
         extractSiteCode(arret.poiPlanning),
       ].filter(Boolean);
-      const matchesSite = filterSite === "ALL" ? true : rowSites.includes(filterSite);
+      const matchesSite =
+        filterSite === "ALL" ? true : rowSites.includes(filterSite);
 
       return matchesType && matchesMatricule && matchesSite;
     });
@@ -501,7 +507,9 @@ const Arrets = () => {
     const latStr = parseFloat(arret.lat).toFixed(6);
     const lngStr = parseFloat(arret.lng).toFixed(6);
     const isPointNoir = Boolean(arret.isPointNoir);
-    const visitedPois = Array.isArray(arret.validatedPois) ? arret.validatedPois : [];
+    const visitedPois = Array.isArray(arret.validatedPois)
+      ? arret.validatedPois
+      : [];
     setMapPositions([
       {
         id: arret.id,
@@ -523,11 +531,10 @@ const Arrets = () => {
             )}
             {visitedPois.length > 0 && (
               <>
-                <br />
-                ✓ POI validés: {visitedPois.map((poi) => poi.label || poi.code).join(", ")}
+                <br />✓ POI validés:{" "}
+                {visitedPois.map((poi) => poi.label || poi.code).join(", ")}
               </>
             )}
-            
           </>
         ),
       },
@@ -571,11 +578,10 @@ const Arrets = () => {
             )}
             {visitedPois.length > 0 && (
               <>
-                <br />
-                ✓ POI validés: {visitedPois.map((poi) => poi.label || poi.code).join(", ")}
+                <br />✓ POI validés:{" "}
+                {visitedPois.map((poi) => poi.label || poi.code).join(", ")}
               </>
             )}
-            
           </>
         ),
       };
@@ -804,7 +810,9 @@ const Arrets = () => {
                     : "xl:col-span-1"
                 }`}
               >
-                <span className="text-xs font-semibold text-gray-500">Date</span>
+                <span className="text-xs font-semibold text-gray-500">
+                  Date
+                </span>
                 <div
                   className={`flex items-center gap-2 ${
                     draftFilters.dateFilterMode === "range"
@@ -866,7 +874,9 @@ const Arrets = () => {
               </label>
 
               <label className="space-y-1.5">
-                <span className="text-xs font-semibold text-gray-500">Matricule</span>
+                <span className="text-xs font-semibold text-gray-500">
+                  Matricule
+                </span>
                 <div className="relative">
                   <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
                     <FiFilter className="text-gray-400" />
@@ -884,10 +894,14 @@ const Arrets = () => {
               </label>
 
               <label className="space-y-1.5">
-                <span className="text-xs font-semibold text-gray-500">Site</span>
+                <span className="text-xs font-semibold text-gray-500">
+                  Site
+                </span>
                 <select
                   value={draftFilters.filterSite}
-                  onChange={(e) => updateDraftFilter("filterSite", e.target.value)}
+                  onChange={(e) =>
+                    updateDraftFilter("filterSite", e.target.value)
+                  }
                   className="h-11 w-full appearance-none rounded-xl border border-gray-200 bg-white px-3 text-sm font-medium text-gray-700 outline-none ring-orange-400 transition focus:ring-2"
                 >
                   <option value="ALL">Tous les sites</option>
@@ -900,11 +914,15 @@ const Arrets = () => {
               </label>
 
               <label className="space-y-1.5">
-                <span className="text-xs font-semibold text-gray-500">Type</span>
+                <span className="text-xs font-semibold text-gray-500">
+                  Type
+                </span>
                 <div className="relative">
                   <select
                     value={draftFilters.filterType}
-                    onChange={(e) => updateDraftFilter("filterType", e.target.value)}
+                    onChange={(e) =>
+                      updateDraftFilter("filterType", e.target.value)
+                    }
                     className="h-11 w-full appearance-none rounded-xl border border-gray-200 bg-white px-3 text-sm font-medium text-gray-700 outline-none ring-orange-400 transition focus:ring-2"
                   >
                     <option>Tous</option>
@@ -1006,42 +1024,152 @@ const Arrets = () => {
             </div>
           )}
 
-          <div className="min-h-[500px] overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm">
+          <div className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm">
             <div className="overflow-x-auto">
-              <table className="w-full border-collapse text-left text-sm">
+              <table className="min-w-[1500px] w-full border-collapse text-left text-sm">
                 <thead>
-                  <tr className="border-b border-gray-100 bg-gray-50/50">
-                    <th className="px-6 py-2.5 text-[11px] font-bold uppercase tracking-wider text-gray-500">
+                  <tr>
+                    <th
+                      className="px-6 py-3"
+                      style={{
+                        textAlign: "left",
+                        fontWeight: 600,
+                        color: "#64748b",
+                        padding: "14px 18px",
+                        borderBottom: "1px solid #e5e7eb",
+                        background: "#f9fafb",
+                      }}
+                    >
                       Camion
                     </th>
-                    <th className="px-6 py-2.5 text-[11px] font-bold uppercase tracking-wider text-gray-500">
+                    <th
+                      className="px-6 py-3"
+                      style={{
+                        textAlign: "left",
+                        fontWeight: 600,
+                        color: "#64748b",
+                        padding: "14px 18px",
+                        borderBottom: "1px solid #e5e7eb",
+                        background: "#f9fafb",
+                      }}
+                    >
                       Date & Heure
                     </th>
-                    <th className="px-6 py-2.5 text-[11px] font-bold uppercase tracking-wider text-gray-500">
+                    <th
+                      className="px-6 py-3"
+                      style={{
+                        textAlign: "left",
+                        fontWeight: 600,
+                        color: "#64748b",
+                        padding: "14px 18px",
+                        borderBottom: "1px solid #e5e7eb",
+                        background: "#f9fafb",
+                      }}
+                    >
                       Durée
                     </th>
-                    <th className="px-6 py-2.5 text-[11px] font-bold uppercase tracking-wider text-gray-500">
+                    <th
+                      className="px-6 py-3"
+                      style={{
+                        textAlign: "left",
+                        fontWeight: 600,
+                        color: "#64748b",
+                        padding: "14px 18px",
+                        borderBottom: "1px solid #e5e7eb",
+                        background: "#f9fafb",
+                      }}
+                    >
                       Dest. Programmée
                     </th>
-                    <th className="px-6 py-2.5 text-[11px] font-bold uppercase tracking-wider text-gray-500">
+                    <th
+                      className="px-6 py-3"
+                      style={{
+                        textAlign: "left",
+                        fontWeight: 600,
+                        color: "#64748b",
+                        padding: "14px 18px",
+                        borderBottom: "1px solid #e5e7eb",
+                        background: "#f9fafb",
+                      }}
+                    >
                       POI proche
                     </th>
-                    <th className="px-6 py-2.5 text-[11px] font-bold uppercase tracking-wider text-gray-500">
+                    <th
+                      className="px-6 py-3"
+                      style={{
+                        textAlign: "left",
+                        fontWeight: 600,
+                        color: "#64748b",
+                        padding: "14px 18px",
+                        borderBottom: "1px solid #e5e7eb",
+                        background: "#f9fafb",
+                      }}
+                    >
                       N° Voyage
                     </th>
-                    <th className="px-6 py-2.5 text-[11px] font-bold uppercase tracking-wider text-gray-500">
+                    <th
+                      className="px-6 py-3"
+                      style={{
+                        textAlign: "left",
+                        fontWeight: 600,
+                        color: "#64748b",
+                        padding: "14px 18px",
+                        borderBottom: "1px solid #e5e7eb",
+                        background: "#f9fafb",
+                      }}
+                    >
                       Chauffeur
                     </th>
-                    <th className="px-6 py-2.5 text-[11px] font-bold uppercase tracking-wider text-gray-500">
+                    <th
+                      className="px-6 py-3"
+                      style={{
+                        textAlign: "left",
+                        fontWeight: 600,
+                        color: "#64748b",
+                        padding: "14px 18px",
+                        borderBottom: "1px solid #e5e7eb",
+                        background: "#f9fafb",
+                      }}
+                    >
                       Téléphone
                     </th>
-                    <th className="px-6 py-2.5 text-[11px] font-bold uppercase tracking-wider text-gray-500">
+                    <th
+                      className="px-6 py-3"
+                      style={{
+                        textAlign: "left",
+                        fontWeight: 600,
+                        color: "#64748b",
+                        padding: "14px 18px",
+                        borderBottom: "1px solid #e5e7eb",
+                        background: "#f9fafb",
+                      }}
+                    >
                       Vérification (POI)
                     </th>
-                    <th className="px-6 py-2.5 text-[11px] font-bold uppercase tracking-wider text-gray-500">
+                    <th
+                      className="px-6 py-3"
+                      style={{
+                        textAlign: "left",
+                        fontWeight: 600,
+                        color: "#64748b",
+                        padding: "14px 18px",
+                        borderBottom: "1px solid #e5e7eb",
+                        background: "#f9fafb",
+                      }}
+                    >
                       Appel
                     </th>
-                    <th className="px-6 py-2.5 text-[11px] font-bold uppercase tracking-wider text-gray-500">
+                    <th
+                      className="px-6 py-3"
+                      style={{
+                        textAlign: "left",
+                        fontWeight: 600,
+                        color: "#64748b",
+                        padding: "14px 18px",
+                        borderBottom: "1px solid #e5e7eb",
+                        background: "#f9fafb",
+                      }}
+                    >
                       Actions
                     </th>
                   </tr>
@@ -1050,187 +1178,190 @@ const Arrets = () => {
                   {filteredData.map((arret) => {
                     const isPointNoir = Boolean(arret.isPointNoir);
                     return (
-                    <tr
-                      key={arret.id}
-                      onClick={() => handleSelectArret(arret)}
-                      className={`group cursor-pointer transition-all ${
-                        selectedArretId === arret.id
-                          ? "ring-2 ring-inset ring-orange-200"
-                          : ""
-                      }`}
-                      style={{
-                        backgroundColor: isPointNoir
-                          ? "#fefce8"
-                          : arret.status === "conforme" ? "#f0fdf4" : "#fef2f2",
-                      }}
-                    >
-                      <td className="whitespace-nowrap px-6 py-2">
-                        <div className="flex flex-col">
-                          <span className="text-sm font-semibold text-gray-900">
-                            {arret.camion}
-                          </span>
-                          <span className="text-[10px] font-bold uppercase tracking-tight text-gray-400">
-                            {arret.systemgps}
-                          </span>
-                        </div>
-                      </td>
-                      <td className="whitespace-nowrap px-6 py-2 font-medium text-gray-600">
-                        {arret.date}
-                      </td>
-                      <td className="whitespace-nowrap px-6 py-2">
-                        <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-bold text-gray-700">
-                          {arret.duree}
-                        </span>
-                      </td>
-                      <td className="whitespace-nowrap px-6 py-2">
-                        <div className="flex flex-col">
-                          <span className="max-w-[150px] truncate text-[12px] font-semibold tracking-tight text-gray-600">
-                            {arret.destination_programmee || "-"}
-                          </span>
-                          
-                        </div>
-                      </td>
-                      <td className="px-6 py-2">
-                        <span className="max-w-[200px] truncate text-[12px] font-semibold tracking-tight text-gray-900">
-                          {arret.poiPlanning === "-"
-                            ? "Site Inconnu"
-                            : arret.poiPlanning}
-                        </span>
-                      </td>
-                      <td className="whitespace-nowrap px-6 py-2 font-medium text-gray-600">
-                        {arret.voycle}
-                      </td>
-                      <td className="whitespace-nowrap px-6 py-2 font-medium text-gray-600">
-                        {arret.chauffeur_nom}
-                      </td>
-                      <td className="whitespace-nowrap px-6 py-2 font-medium text-gray-600">
-                        {arret.chauffeur_tel}
-                      </td>
-                      <td className="px-6 py-2">
-                        <div className="flex flex-col gap-1.5">
-                          <div className="flex items-center gap-2">
-                            <div
-                              className={`h-2 w-2 rounded-full ${
-                                isPointNoir
-                                  ? "bg-slate-900"
-                                  : arret.status === "conforme"
-                                    ? "bg-green-500"
-                                    : "bg-red-500"
-                              }`}
-                            ></div>
-                            <span
-                              className={`text-[10px] font-semibold uppercase tracking-tighter ${
-                                isPointNoir
-                                  ? "text-slate-900"
-                                  : arret.status === "conforme"
-                                    ? "text-green-700"
-                                    : "text-red-700"
-                              }`}
-                            >
-                              {isPointNoir
-                                ? "Point noir"
-                                : arret.status === "conforme"
-                                  ? "Conforme"
-                                  : "Écart détecté"}
+                      <tr
+                        key={arret.id}
+                        onClick={() => handleSelectArret(arret)}
+                        className={`group cursor-pointer transition-colors ${
+                          selectedArretId === arret.id
+                            ? "bg-orange-50/60"
+                            : "hover:bg-gray-50/70"
+                        }`}
+                        style={{
+                          backgroundColor: isPointNoir
+                            ? "#fefce8"
+                            : arret.status === "conforme"
+                              ? "#f8fff8"
+                              : "#fff7f7",
+                        }}
+                      >
+                        <td className="whitespace-nowrap px-6 py-4 align-middle">
+                          <div className="flex flex-col">
+                            <span className="text-sm font-semibold text-gray-900">
+                              {arret.camion}
+                            </span>
+                            <span className="text-[10px] font-bold uppercase tracking-tight text-gray-400">
+                              {arret.systemgps}
                             </span>
                           </div>
-                          {arret.distance_poi_proche !== null ? (
-                            <div className="flex w-fit items-center gap-1.5 rounded-lg border border-gray-100 bg-gray-50 px-2 py-0.5">
-                              <span className="text-[9px] font-medium uppercase tracking-widest text-gray-400">
-                                Dist. POI proche
-                              </span>
-                              <span className="text-[11px] font-semibold text-gray-900">
-                                {arret.distance_poi_proche}m
-                              </span>
-                            </div>
-                          ) : (
-                            <span className="text-[10px] font-bold text-gray-300">
-                              Dist. POI proche indisponible
+                        </td>
+                        <td className="whitespace-nowrap px-6 py-4 align-middle font-medium text-gray-600">
+                          {arret.date}
+                        </td>
+                        <td className="whitespace-nowrap px-6 py-4 align-middle">
+                          <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-bold text-gray-700">
+                            {arret.duree}
+                          </span>
+                        </td>
+                        <td className="whitespace-nowrap px-6 py-4 align-middle">
+                          <div className="flex flex-col">
+                            <span className="max-w-[150px] truncate text-[12px] font-semibold tracking-tight text-gray-600">
+                              {arret.destination_programmee || "-"}
                             </span>
-                          )}
-                          {isPointNoir && arret.pointNoirPoi && (
-                            <span className="text-[11px] font-semibold text-slate-700">
-                              Point noir: {arret.pointNoirPoi}
-                            </span>
-                          )}
-                          {Array.isArray(arret.validatedPois) &&
-                          arret.validatedPois.length > 0 ? (
-                            <div className="flex flex-col gap-1">
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 align-middle">
+                          <span className="max-w-[200px] truncate text-[12px] font-semibold tracking-tight text-gray-900">
+                            {arret.poiPlanning === "-"
+                              ? "Site Inconnu"
+                              : arret.poiPlanning}
+                          </span>
+                        </td>
+                        <td className="whitespace-nowrap px-6 py-4 align-middle font-medium text-gray-600">
+                          {arret.voycle}
+                        </td>
+                        <td className="whitespace-nowrap px-6 py-4 align-middle font-medium text-gray-600">
+                          {arret.chauffeur_nom}
+                        </td>
+                        <td className="whitespace-nowrap px-6 py-4 align-middle font-medium text-gray-600">
+                          {arret.chauffeur_tel}
+                        </td>
+                        <td className="px-6 py-4 align-middle">
+                          <div className="flex flex-col gap-1.5">
+                            <div className="flex items-center gap-2">
+                              <div
+                                className={`h-2 w-2 rounded-full ${
+                                  isPointNoir
+                                    ? "bg-slate-900"
+                                    : arret.status === "conforme"
+                                      ? "bg-green-500"
+                                      : "bg-red-500"
+                                }`}
+                              ></div>
                               <span
-                                className={`text-[10px] font-bold uppercase tracking-widest ${
-                                  arret.status === "conforme"
-                                    ? "text-green-700"
-                                    : "text-amber-700"
+                                className={`text-[10px] font-semibold uppercase tracking-tighter ${
+                                  isPointNoir
+                                    ? "text-slate-900"
+                                    : arret.status === "conforme"
+                                      ? "text-green-700"
+                                      : "text-red-700"
                                 }`}
                               >
-                                {arret.status === "conforme"
-                                  ? "Visite POI validée"
-                                  : "POI lié (non conforme)"}
+                                {isPointNoir
+                                  ? "Point noir"
+                                  : arret.status === "conforme"
+                                    ? "Conforme"
+                                    : "Écart détecté"}
                               </span>
-                              {arret.validatedPois.map((poi, idx) => (
+                            </div>
+                            {arret.distance_poi_proche !== null ? (
+                              <div className="flex w-fit items-center gap-1.5 rounded-lg border border-gray-100 bg-gray-50 px-2 py-0.5">
+                                <span className="text-[9px] font-medium uppercase tracking-widest text-gray-400">
+                                  Dist. POI proche
+                                </span>
+                                <span className="text-[11px] font-semibold text-gray-900">
+                                  {arret.distance_poi_proche}m
+                                </span>
+                              </div>
+                            ) : (
+                              <span className="text-[10px] font-bold text-gray-300">
+                                Dist. POI proche indisponible
+                              </span>
+                            )}
+                            {isPointNoir && arret.pointNoirPoi && (
+                              <span className="text-[11px] font-semibold text-slate-700">
+                                Point noir: {arret.pointNoirPoi}
+                              </span>
+                            )}
+                            {Array.isArray(arret.validatedPois) &&
+                            arret.validatedPois.length > 0 ? (
+                              <div className="flex flex-col gap-1">
                                 <span
-                                  key={`${arret.id}-poi-${idx}`}
-                                  className={`text-[11px] font-semibold ${
+                                  className={`text-[10px] font-bold uppercase tracking-widest ${
                                     arret.status === "conforme"
                                       ? "text-green-700"
                                       : "text-amber-700"
                                   }`}
                                 >
-                                  {arret.status === "conforme" ? "✓" : "-"} {poi.label || poi.code}
+                                  {arret.status === "conforme"
+                                    ? "Visite POI validée"
+                                    : "POI lié (non conforme)"}
                                 </span>
-                              ))}
-                            </div>
-                          ) : (
-                            <span className="text-[10px] font-bold text-gray-300">
-                              {arret.status === "conforme"
-                                ? "Aucune visite POI validée"
-                                : "Aucun POI lié"}
-                            </span>
-                          )}
-                        </div>
-                      </td>
-                      <td className="whitespace-nowrap px-6 py-2">
-                        {(() => {
-                          const appel = findAppelForArret(arret);
-                          if (appel && appel.session_id) {
+                                {arret.validatedPois.map((poi, idx) => (
+                                  <span
+                                    key={`${arret.id}-poi-${idx}`}
+                                    className={`text-[11px] font-semibold ${
+                                      arret.status === "conforme"
+                                        ? "text-green-700"
+                                        : "text-amber-700"
+                                    }`}
+                                  >
+                                    {arret.status === "conforme" ? "✓" : "-"}{" "}
+                                    {poi.label || poi.code}
+                                  </span>
+                                ))}
+                              </div>
+                            ) : (
+                              <span className="text-[10px] font-bold text-gray-300">
+                                {arret.status === "conforme"
+                                  ? "Aucune visite POI validée"
+                                  : "Aucun POI lié"}
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="whitespace-nowrap px-6 py-4 align-middle">
+                          {(() => {
+                            const appel = findAppelForArret(arret);
+                            if (appel && appel.session_id) {
+                              return (
+                                <Link
+                                  href={`/appels/${appel.session_id}`}
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="inline-flex items-center gap-1.5 rounded-full border border-green-200 bg-green-50 px-3 py-1.5 text-xs font-bold text-green-700 transition-all hover:bg-green-100"
+                                >
+                                  <FiPhone /> Appel lancé
+                                </Link>
+                              );
+                            }
                             return (
-                              <Link
-                                href={`/appels/${appel.session_id}`}
-                                onClick={(e) => e.stopPropagation()}
-                                className="inline-flex items-center gap-1.5 rounded-full border border-green-200 bg-green-50 px-3 py-1.5 text-xs font-bold text-green-700 transition-all hover:bg-green-100"
-                              >
-                                <FiPhone /> Appel lancé
-                              </Link>
+                              <span className="inline-flex items-center gap-1.5 rounded-full border border-gray-200 bg-gray-50 px-3 py-1.5 text-xs font-bold text-gray-400">
+                                <FiPhoneOff /> Pas d&apos;appel
+                              </span>
                             );
-                          }
-                          return (
-                            <span className="inline-flex items-center gap-1.5 rounded-full border border-gray-200 bg-gray-50 px-3 py-1.5 text-xs font-bold text-gray-400">
-                              <FiPhoneOff /> Pas d'appel
-                            </span>
-                          );
-                        })()}
-                      </td>
-                      <td className="px-6 py-2">
-                        <div className="flex items-center gap-2 transition-opacity">
-                          {arret.status === "non_conforme" && !isPointNoir && (
+                          })()}
+                        </td>
+                        <td className="px-6 py-4 align-middle">
+                          <div className="flex items-center gap-2 transition-opacity">
+                            {arret.status === "non_conforme" &&
+                              !isPointNoir && (
+                                <button
+                                  onClick={(e) => handleOpenPoiModal(e, arret)}
+                                  className="rounded-lg border border-gray-200 bg-white p-2 text-gray-600 shadow-sm transition-all hover:border-orange-200 hover:text-orange-600"
+                                  title="Ajouter ce lieu comme POI"
+                                >
+                                  <FiPlus />
+                                </button>
+                              )}
                             <button
-                              onClick={(e) => handleOpenPoiModal(e, arret)}
-                              className="rounded-lg border border-gray-200 bg-white p-2 text-gray-600 shadow-sm transition-all hover:border-orange-200 hover:text-orange-600"
-                              title="Ajouter ce lieu comme POI"
+                              className="rounded-lg border border-gray-200 bg-white p-2 text-gray-600 shadow-sm transition-all hover:border-blue-200 hover:text-blue-600"
+                              title="Détails de l'arrêt"
                             >
-                              <FiPlus />
+                              <FiMap />
                             </button>
-                          )}
-                          <button
-                            className="rounded-lg border border-gray-200 bg-white p-2 text-gray-600 shadow-sm transition-all hover:border-blue-200 hover:text-blue-600"
-                            title="Détails de l'arrêt"
-                          >
-                            <FiMap />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
+                          </div>
+                        </td>
+                      </tr>
+                    );
                   })}
                 </tbody>
               </table>

@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useMemo, useState, useEffect, useCallback } from "react";
 import Link from "next/link";
@@ -37,7 +37,8 @@ const formatDureeMinutes = (minutes) => {
 
 const normalizeCoordinate = (value) => {
   if (value === null || value === undefined) return null;
-  const raw = typeof value === "string" ? value.trim().replace(",", ".") : value;
+  const raw =
+    typeof value === "string" ? value.trim().replace(",", ".") : value;
   const numberValue = Number(raw);
   return Number.isFinite(numberValue) ? numberValue : null;
 };
@@ -54,13 +55,10 @@ const parseToMs = (value) => {
   }
   const raw = String(value).trim();
   if (!raw) return null;
-  const normalized = raw
-    .replace(" ", "T")
-    .replace(/([+-]\d{2})$/, "$1:00");
+  const normalized = raw.replace(" ", "T").replace(/([+-]\d{2})$/, "$1:00");
   const ms = Date.parse(normalized);
   return Number.isFinite(ms) ? ms : null;
 };
-
 
 const normalizeSourceId = (value) => {
   if (!value) return null;
@@ -90,7 +88,8 @@ const formatSourceId = (camion, value) => {
   if (typeof value === "string") {
     const raw = value.trim();
     if (!raw) return null;
-    const looksIso = raw.includes("T") || /Z$/.test(raw) || /[+-]\d{2}:?\d{2}$/.test(raw);
+    const looksIso =
+      raw.includes("T") || /Z$/.test(raw) || /[+-]\d{2}:?\d{2}$/.test(raw);
     if (looksIso) {
       const localTs = formatLocalDateTime(raw);
       if (localTs) return `${camion}|${localTs}`;
@@ -287,10 +286,10 @@ const OuverturePorte = () => {
           const statut =
             item.statut ??
             (voyagePlanifie &&
-              distancePoiMetres !== null &&
-              distancePoiMetres < 10 &&
-              dureeMinutes !== null &&
-              dureeMinutes < 35
+            distancePoiMetres !== null &&
+            distancePoiMetres < 10 &&
+            dureeMinutes !== null &&
+            dureeMinutes < 35
               ? "conforme"
               : "non_conforme");
 
@@ -312,18 +311,18 @@ const OuverturePorte = () => {
             dateFermRaw: dateFermSource || null,
             dateOuv: dateOuv
               ? dateOuv.toLocaleTimeString("fr-FR", {
-                hour: "2-digit",
-                minute: "2-digit",
-              })
+                  hour: "2-digit",
+                  minute: "2-digit",
+                })
               : "-",
             dateOuvJour: dateOuv ? dateOuv.toISOString().split("T")[0] : "-",
             duree: formatDureeMinutes(dureeMinutes),
             dureeMinutes,
             dateFerm: dateFerm
               ? dateFerm.toLocaleTimeString("fr-FR", {
-                hour: "2-digit",
-                minute: "2-digit",
-              })
+                  hour: "2-digit",
+                  minute: "2-digit",
+                })
               : "En cours",
             dateFermJour: dateFerm ? dateFerm.toISOString().split("T")[0] : "",
             statut,
@@ -360,11 +359,17 @@ const OuverturePorte = () => {
     const camion = normalizeCamion(row.camion);
     const camionKey = normalizeCamionKey(camion);
     const doorMs = parseToMs(
-      row.dateOuvRaw || row.dateOuverture || row.date_ouverture || row.dateOuvJour,
+      row.dateOuvRaw ||
+        row.dateOuverture ||
+        row.date_ouverture ||
+        row.dateOuvJour,
     );
     const doorSourceId = formatSourceId(
       camion,
-      row.dateOuvRaw || row.dateOuverture || row.date_ouverture || row.dateOuvJour,
+      row.dateOuvRaw ||
+        row.dateOuverture ||
+        row.date_ouverture ||
+        row.dateOuvJour,
     );
     const doorKey = buildSourceKey("voyagetracking_port_ouvert", doorSourceId);
 
@@ -393,7 +398,9 @@ const OuverturePorte = () => {
         if (normalizeCamionKey(a.camion_id) !== camionKey) return false;
         const typeNc = String(a.type_nc || "").toLowerCase();
         if (!typeNc.includes("arret_et_porte_ouverte")) return false;
-        const table2 = String(a.source_table_2 || "").toLowerCase().trim();
+        const table2 = String(a.source_table_2 || "")
+          .toLowerCase()
+          .trim();
         if (table2 !== "voyagetracking_port_ouvert") return false;
         if (a.source_id_2) return false;
 
@@ -496,9 +503,7 @@ const OuverturePorte = () => {
 
   const handleOpenFullMap = () => {
     const positions = filteredData
-      .filter(
-        (item) => Number.isFinite(item.lat) && Number.isFinite(item.lng),
-      )
+      .filter((item) => Number.isFinite(item.lat) && Number.isFinite(item.lng))
       .map((item) => {
         const latStr = item.lat.toFixed(6);
         const lngStr = item.lng.toFixed(6);
@@ -763,207 +768,329 @@ const OuverturePorte = () => {
             </div>
           </div>
 
-          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden min-h-[500px]">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm text-left border-collapse">
-              <thead>
-                <tr className="bg-gray-50/50 border-b border-gray-100">
-                  <th className="px-6 py-2.5 font-bold text-gray-500 uppercase tracking-wider text-[11px]">
-                    Camion
-                  </th>
-                  <th className="px-6 py-2.5 font-bold text-gray-500 uppercase tracking-wider text-[11px]">
-                    Voyage planifié
-                  </th>
-                  <th className="px-6 py-2.5 font-bold text-gray-500 uppercase tracking-wider text-[11px]">
-                    Localisation
-                  </th>
-                  <th className="px-6 py-2.5 font-bold text-gray-500 uppercase tracking-wider text-[11px]">
-                    POI proche
-                  </th>
-                  <th className="px-6 py-2.5 font-bold text-gray-500 uppercase tracking-wider text-[11px]">
-                    Adresse POI
-                  </th>
-                  <th className="px-6 py-2.5 font-bold text-gray-500 uppercase tracking-wider text-[11px]">
-                    Distance
-                  </th>
-                  <th className="px-6 py-2.5 font-bold text-gray-500 uppercase tracking-wider text-[11px]">
-                    Ouverture
-                  </th>
-                  <th className="px-6 py-2.5 font-bold text-gray-500 uppercase tracking-wider text-[11px]">
-                    Date ouv.
-                  </th>
-                  <th className="px-6 py-2.5 font-bold text-gray-500 uppercase tracking-wider text-[11px]">
-                    Durée
-                  </th>
-                  <th className="px-6 py-2.5 font-bold text-gray-500 uppercase tracking-wider text-[11px]">
-                    Date ferm.
-                  </th>
-                  <th className="px-6 py-2.5 font-bold text-gray-500 uppercase tracking-wider text-[11px]">
-                    Statut
-                  </th>
-                  <th className="px-6 py-2.5 font-bold text-gray-500 uppercase tracking-wider text-[11px]">
-                    Appel
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-50">
-                {filteredData.map((row) => (
-                  <tr
-                    key={row.id}
-                    onClick={() => handleSelectOuverture(row)}
-                    className={`group cursor-pointer transition-all ${selectedOuvertureId === row.id ? "ring-2 ring-inset ring-orange-200" : ""}`}
-                    style={{
-                      backgroundColor: row.isPointNoir
-                        ? "#fefce8"
-                        : row.statut === "conforme" ? "#f0fdf4" : "#fef2f2",
-                    }}
-                  >
-                    <td className="px-6 py-2 whitespace-nowrap">
-                      <span className="font-semibold text-gray-900 text-sm">
-                        {row.camion}
-                      </span>
-                    </td>
-                    <td className="px-6 py-2 whitespace-nowrap">
-                      {row.voyagePlanifie ? (
-                        <span className="px-3 py-1 rounded-full text-xs font-bold bg-green-50 text-green-700 border border-green-200">
-                          Oui
-                        </span>
-                      ) : (
-                        <span className="px-3 py-1 rounded-full text-xs font-bold bg-red-50 text-red-700 border border-red-200">
-                          Non
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-6 py-2 whitespace-nowrap">
-                      <span className="inline-flex items-center gap-1.5 font-medium text-gray-600">
-                        <FiMapPin className="text-gray-400" />
-                        {row.localisation}
-                      </span>
-                    </td>
-                    <td className="px-6 py-2 whitespace-nowrap font-medium text-gray-600">
-                      {row.poiProche}
-                    </td>
-                    <td className="px-6 py-2 whitespace-nowrap font-medium text-gray-600">
-                      {row.poiAdresse}
-                    </td>
-                    <td className="px-6 py-2 whitespace-nowrap">
-                      <span className="px-3 py-1 bg-gray-100 rounded-full text-xs font-bold text-gray-700">
-                        {row.distancePoiMetres !== null &&
-                          row.distancePoiMetres !== undefined
-                          ? `${Number(row.distancePoiMetres).toFixed(2)} m`
-                          : "-"}
-                      </span>
-                    </td>
-                    <td className="px-6 py-2 whitespace-nowrap">
-                      <span className="px-3 py-1 bg-orange-50 border border-orange-200 rounded-full text-xs font-bold text-orange-700">
-                        {row.ouverture}
-                      </span>
-                    </td>
-                    <td className="px-6 py-2 whitespace-nowrap font-medium text-gray-600">
-                      <div className="font-semibold text-gray-900 text-sm">
-                        {row.dateOuv}
-                      </div>
-                      <div className="text-[11px] text-gray-400">
-                        {row.dateOuvJour}
-                      </div>
-                    </td>
-                    <td className="px-6 py-2 whitespace-nowrap">
-                      <span className="px-3 py-1 bg-gray-100 rounded-full text-xs font-bold text-gray-700">
-                        {row.duree}
-                      </span>
-                    </td>
-                    <td className="px-6 py-2 whitespace-nowrap font-medium text-gray-600">
-                      <div className="font-semibold text-gray-900 text-sm">
-                        {row.dateFerm}
-                      </div>
-                      {row.dateFermJour && (
-                        <div className="text-[11px] text-gray-400">
-                          {row.dateFermJour}
-                        </div>
-                      )}
-                    </td>
-                    <td className="px-6 py-2">
-                      {row.isPointNoir ? (
-                        <div className="flex items-center gap-2">
-                          <div className="w-2 h-2 rounded-full bg-red-900"></div>
-                          <span className="text-[10px] font-semibold uppercase tracking-tighter text-red-900 inline-flex items-center gap-1 rounded-full bg-red-50 border border-red-200 px-2 py-0.5">
-                            Non conforme (Point noir)
-                          </span>
-                        </div>
-                      ) : row.statut === "conforme" ? (
-                        <div className="flex items-center gap-2">
-                          <div className="w-2 h-2 rounded-full bg-green-500"></div>
-                          <span className="text-[10px] font-semibold uppercase tracking-tighter text-green-700 inline-flex items-center gap-1">
-                            <FiCheckCircle /> Conforme
-                          </span>
-                        </div>
-                      ) : (
-                        <div className="flex items-center gap-2">
-                          <div className="w-2 h-2 rounded-full bg-red-500"></div>
-                          <span className="text-[10px] font-semibold uppercase tracking-tighter text-red-700 inline-flex items-center gap-1">
-                            <FiXCircle /> Non conforme
-                          </span>
-                        </div>
-                      )}
-                      {row.isPointNoir && row.pointNoirPoi && (
-                        <div className="mt-1 text-[10px] font-semibold text-slate-600">
-                          Point noir: {row.pointNoirPoi}
-                          {row.pointNoirDistanceMetres != null && (
-                            <span className="text-slate-500">
-                              {` (${Number(row.pointNoirDistanceMetres).toFixed(0)} m)`}
-                            </span>
-                          )}
-                        </div>
-                      )}
-                    </td>
-                    <td className="px-6 py-2 whitespace-nowrap">
-                      {(() => {
-                        const appel = findAppelForPorte(row);
-                        if (appel && appel.session_id) {
-                          return (
-                            <Link
-                              href={`/appels/${appel.session_id}`}
-                              onClick={(e) => e.stopPropagation()}
-                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-green-50 text-green-700 border border-green-200 hover:bg-green-100 transition-all"
-                            >
-                              <FiPhone /> Appel lancé
-                            </Link>
-                          );
-                        }
-                        return (
-                          <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-gray-50 text-gray-400 border border-gray-200">
-                            <FiPhoneOff /> Pas d'appel
-                          </span>
-                        );
-                      })()}
-                    </td>
+          <div className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm">
+            <div className="overflow-x-auto">
+              <table className="w-full border-collapse text-left text-sm">
+                <thead>
+                  <tr>
+                    <th
+                      className="px-6 py-3"
+                      style={{
+                        textAlign: "left",
+                        fontWeight: 600,
+                        color: "#64748b",
+                        padding: "14px 18px",
+                        borderBottom: "1px solid #e5e7eb",
+                        background: "#f9fafb",
+                      }}
+                    >
+                      Camion
+                    </th>
+                    <th
+                      className="px-6 py-3"
+                      style={{
+                        textAlign: "left",
+                        fontWeight: 600,
+                        color: "#64748b",
+                        padding: "14px 18px",
+                        borderBottom: "1px solid #e5e7eb",
+                        background: "#f9fafb",
+                      }}
+                    >
+                      Voyage planifié
+                    </th>
+                    <th
+                      className="px-6 py-3"
+                      style={{
+                        textAlign: "left",
+                        fontWeight: 600,
+                        color: "#64748b",
+                        padding: "14px 18px",
+                        borderBottom: "1px solid #e5e7eb",
+                        background: "#f9fafb",
+                      }}
+                    >
+                      Localisation
+                    </th>
+                    <th
+                      className="px-6 py-3"
+                      style={{
+                        textAlign: "left",
+                        fontWeight: 600,
+                        color: "#64748b",
+                        padding: "14px 18px",
+                        borderBottom: "1px solid #e5e7eb",
+                        background: "#f9fafb",
+                      }}
+                    >
+                      POI proche
+                    </th>
+                    <th
+                      className="px-6 py-3"
+                      style={{
+                        textAlign: "left",
+                        fontWeight: 600,
+                        color: "#64748b",
+                        padding: "14px 18px",
+                        borderBottom: "1px solid #e5e7eb",
+                        background: "#f9fafb",
+                      }}
+                    >
+                      Adresse POI
+                    </th>
+                    <th
+                      className="px-6 py-3"
+                      style={{
+                        textAlign: "left",
+                        fontWeight: 600,
+                        color: "#64748b",
+                        padding: "14px 18px",
+                        borderBottom: "1px solid #e5e7eb",
+                        background: "#f9fafb",
+                      }}
+                    >
+                      Distance
+                    </th>
+                    <th
+                      className="px-6 py-3"
+                      style={{
+                        textAlign: "left",
+                        fontWeight: 600,
+                        color: "#64748b",
+                        padding: "14px 18px",
+                        borderBottom: "1px solid #e5e7eb",
+                        background: "#f9fafb",
+                      }}
+                    >
+                      Ouverture
+                    </th>
+                    <th
+                      className="px-6 py-3"
+                      style={{
+                        textAlign: "left",
+                        fontWeight: 600,
+                        color: "#64748b",
+                        padding: "14px 18px",
+                        borderBottom: "1px solid #e5e7eb",
+                        background: "#f9fafb",
+                      }}
+                    >
+                      Date ouv.
+                    </th>
+                    <th
+                      className="px-6 py-3"
+                      style={{
+                        textAlign: "left",
+                        fontWeight: 600,
+                        color: "#64748b",
+                        padding: "14px 18px",
+                        borderBottom: "1px solid #e5e7eb",
+                        background: "#f9fafb",
+                      }}
+                    >
+                      Durée
+                    </th>
+                    <th
+                      className="px-6 py-3"
+                      style={{
+                        textAlign: "left",
+                        fontWeight: 600,
+                        color: "#64748b",
+                        padding: "14px 18px",
+                        borderBottom: "1px solid #e5e7eb",
+                        background: "#f9fafb",
+                      }}
+                    >
+                      Date ferm.
+                    </th>
+                    <th
+                      className="px-6 py-3"
+                      style={{
+                        textAlign: "left",
+                        fontWeight: 600,
+                        color: "#64748b",
+                        padding: "14px 18px",
+                        borderBottom: "1px solid #e5e7eb",
+                        background: "#f9fafb",
+                      }}
+                    >
+                      Statut
+                    </th>
+                    <th
+                      className="px-6 py-3"
+                      style={{
+                        textAlign: "left",
+                        fontWeight: 600,
+                        color: "#64748b",
+                        padding: "14px 18px",
+                        borderBottom: "1px solid #e5e7eb",
+                        background: "#f9fafb",
+                      }}
+                    >
+                      Appel
+                    </th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody className="divide-y divide-gray-50">
+                  {filteredData.map((row) => (
+                    <tr
+                      key={row.id}
+                      onClick={() => handleSelectOuverture(row)}
+                      className={`group cursor-pointer transition-colors ${selectedOuvertureId === row.id ? "bg-orange-50/60" : "hover:bg-gray-50/70"}`}
+                      style={{
+                        backgroundColor: row.isPointNoir
+                          ? "#fefce8"
+                          : row.statut === "conforme"
+                            ? "#f8fff8"
+                            : "#fff7f7",
+                      }}
+                    >
+                      <td className="whitespace-nowrap px-6 py-4 align-middle">
+                        <span className="text-sm font-semibold text-gray-900">
+                          {row.camion}
+                        </span>
+                      </td>
+                      <td className="whitespace-nowrap px-6 py-4 align-middle">
+                        {row.voyagePlanifie ? (
+                          <span className="px-3 py-1 rounded-full text-xs font-bold bg-green-50 text-green-700 border border-green-200">
+                            Oui
+                          </span>
+                        ) : (
+                          <span className="px-3 py-1 rounded-full text-xs font-bold bg-red-50 text-red-700 border border-red-200">
+                            Non
+                          </span>
+                        )}
+                      </td>
+                      <td className="whitespace-nowrap px-6 py-4 align-middle">
+                        <span className="inline-flex items-center gap-1.5 font-medium text-gray-600">
+                          <FiMapPin className="text-gray-400" />
+                          {row.localisation}
+                        </span>
+                      </td>
+                      <td className="whitespace-nowrap px-6 py-4 align-middle font-medium text-gray-600">
+                        {row.poiProche}
+                      </td>
+                      <td className="whitespace-nowrap px-6 py-4 align-middle font-medium text-gray-600">
+                        {row.poiAdresse}
+                      </td>
+                      <td className="whitespace-nowrap px-6 py-4 align-middle">
+                        <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-bold text-gray-700">
+                          {row.distancePoiMetres !== null &&
+                          row.distancePoiMetres !== undefined
+                            ? `${Number(row.distancePoiMetres).toFixed(2)} m`
+                            : "-"}
+                        </span>
+                      </td>
+                      <td className="whitespace-nowrap px-6 py-4 align-middle">
+                        <span className="rounded-full border border-orange-200 bg-orange-50 px-3 py-1 text-xs font-bold text-orange-700">
+                          {row.ouverture}
+                        </span>
+                      </td>
+                      <td className="whitespace-nowrap px-6 py-4 align-middle font-medium text-gray-600">
+                        <div className="text-sm font-semibold text-gray-900">
+                          {row.dateOuv}
+                        </div>
+                        <div className="text-[11px] text-gray-400">
+                          {row.dateOuvJour}
+                        </div>
+                      </td>
+                      <td className="whitespace-nowrap px-6 py-4 align-middle">
+                        <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-bold text-gray-700">
+                          {row.duree}
+                        </span>
+                      </td>
+                      <td className="whitespace-nowrap px-6 py-4 align-middle font-medium text-gray-600">
+                        <div className="text-sm font-semibold text-gray-900">
+                          {row.dateFerm}
+                        </div>
+                        {row.dateFermJour && (
+                          <div className="text-[11px] text-gray-400">
+                            {row.dateFermJour}
+                          </div>
+                        )}
+                      </td>
+                      <td className="px-6 py-4 align-middle">
+                        {row.isPointNoir ? (
+                          <div className="flex items-center gap-2">
+                            <div className="h-2 w-2 rounded-full bg-slate-900"></div>
+                            <span className="text-[10px] font-semibold uppercase tracking-tighter text-red-900 inline-flex items-center gap-1 rounded-full bg-red-50 border border-red-200 px-2 py-0.5">
+                              Non conforme (Point noir)
+                            </span>
+                          </div>
+                        ) : row.statut === "conforme" ? (
+                          <div className="flex items-center gap-2">
+                            <div className="w-2 h-2 rounded-full bg-green-500"></div>
+                            <span className="text-[10px] font-semibold uppercase tracking-tighter text-green-700 inline-flex items-center gap-1">
+                              <FiCheckCircle /> Conforme
+                            </span>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-2">
+                            <div className="w-2 h-2 rounded-full bg-red-500"></div>
+                            <span className="text-[10px] font-semibold uppercase tracking-tighter text-red-700 inline-flex items-center gap-1">
+                              <FiXCircle /> Non conforme
+                            </span>
+                          </div>
+                        )}
+                        {row.isPointNoir && row.pointNoirPoi && (
+                          <div className="mt-1 text-[10px] font-semibold text-slate-600">
+                            Point noir: {row.pointNoirPoi}
+                            {row.pointNoirDistanceMetres != null && (
+                              <span className="text-slate-500">
+                                {` (${Number(row.pointNoirDistanceMetres).toFixed(0)} m)`}
+                              </span>
+                            )}
+                          </div>
+                        )}
+                      </td>
+                      <td className="whitespace-nowrap px-6 py-4 align-middle">
+                        {(() => {
+                          const appel = findAppelForPorte(row);
+                          if (appel && appel.session_id) {
+                            return (
+                              <Link
+                                href={`/appels/${appel.session_id}`}
+                                onClick={(e) => e.stopPropagation()}
+                                className="inline-flex items-center gap-1.5 rounded-full border border-green-200 bg-green-50 px-3 py-1.5 text-xs font-bold text-green-700 transition-all hover:bg-green-100"
+                              >
+                                <FiPhone /> Appel lancé
+                              </Link>
+                            );
+                          }
+                          return (
+                            <span className="inline-flex items-center gap-1.5 rounded-full border border-gray-200 bg-gray-50 px-3 py-1.5 text-xs font-bold text-gray-400">
+                              <FiPhoneOff /> Pas d&apos;appel
+                            </span>
+                          );
+                        })()}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
 
-          {filteredData.length === 0 && !loading && (
-            <div className="flex flex-col items-center justify-center py-20 bg-gray-50/30 text-center">
-              <div className="w-[80px] h-[80px] rounded-2xl bg-orange-50 flex items-center justify-center mb-4">
-                <EmptyDoorIcon />
+            {filteredData.length === 0 && !loading && (
+              <div className="flex flex-col items-center justify-center py-20 bg-gray-50/30 text-center">
+                <div className="w-[80px] h-[80px] rounded-2xl bg-orange-50 flex items-center justify-center mb-4">
+                  <EmptyDoorIcon />
+                </div>
+                <h3 className="text-2xl leading-none text-gray-900 font-black tracking-tight mb-2">
+                  Aucun événement trouvé
+                </h3>
+                <p className="text-base leading-relaxed text-gray-500 font-medium max-w-lg px-6">
+                  Aucune donnée ne correspond à la date sélectionnée.
+                  <br />
+                  Modifiez les filtres ou choisissez une autre date.
+                </p>
               </div>
-              <h3 className="text-2xl leading-none text-gray-900 font-black tracking-tight mb-2">
-                Aucun événement trouvé
-              </h3>
-              <p className="text-base leading-relaxed text-gray-500 font-medium max-w-lg px-6">
-                Aucune donnée ne correspond à la date sélectionnée.
-                <br />
-                Modifiez les filtres ou choisissez une autre date.
-              </p>
-            </div>
-          )}
+            )}
 
-          {loading && (
-            <div className="flex justify-center py-20">
-              <div className="w-8 h-8 border-4 border-orange-500 border-t-transparent rounded-full animate-spin"></div>
-            </div>
-          )}
+            {loading && (
+              <div className="flex justify-center py-20">
+                <div className="w-8 h-8 border-4 border-orange-500 border-t-transparent rounded-full animate-spin"></div>
+              </div>
+            )}
           </div>
 
           {filteredData.length > 0 && (
@@ -1045,7 +1172,6 @@ const OuverturePorte = () => {
               </div>
             </div>
           )}
-
         </div>
       </section>
 

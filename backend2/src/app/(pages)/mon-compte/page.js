@@ -19,46 +19,15 @@ import {
 
 /* ═══ Info Row (view mode) ═══ */
 const InfoRow = ({ icon: Icon, label, value, iconColor = "#64748b" }) => (
-  <div
-    style={{
-      display: "flex",
-      alignItems: "center",
-      gap: "14px",
-      padding: "16px 0",
-      borderBottom: "1px solid #f1f5f9",
-    }}
-  >
-    <div
-      style={{
-        width: "42px",
-        height: "42px",
-        borderRadius: "12px",
-        background: "#f8fafc",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        flexShrink: 0,
-        border: "1px solid #f1f5f9",
-      }}
-    >
-      <Icon style={{ color: iconColor, fontSize: "16px" }} />
+  <div className="flex items-center gap-4 py-4 border-b border-gray-100">
+    <div className="w-10 h-10 rounded-lg bg-gray-50 flex items-center justify-center flex-shrink-0 border border-gray-100">
+      <Icon style={{ color: iconColor, fontSize: 16 }} />
     </div>
     <div>
-      <p
-        style={{
-          fontSize: "11px",
-          color: "#94a3b8",
-          fontWeight: 600,
-          textTransform: "uppercase",
-          letterSpacing: "0.6px",
-          marginBottom: "2px",
-        }}
-      >
+      <p className="text-[11px] text-gray-400 font-bold uppercase tracking-wider mb-1">
         {label}
       </p>
-      <p style={{ fontSize: "15px", fontWeight: 700, color: "#1e293b" }}>
-        {value || "—"}
-      </p>
+      <p className="text-sm font-extrabold text-gray-900">{value || "—"}</p>
     </div>
   </div>
 );
@@ -73,19 +42,9 @@ const FormField = ({
   required = false,
   placeholder = "",
 }) => (
-  <div style={{ marginBottom: "16px" }}>
-    <label
-      style={{
-        display: "block",
-        fontSize: "12px",
-        fontWeight: 700,
-        color: "#475569",
-        marginBottom: "6px",
-        textTransform: "uppercase",
-        letterSpacing: "0.5px",
-      }}
-    >
-      {label} {required && <span style={{ color: "#ef4444" }}>*</span>}
+  <div className="mb-4">
+    <label className="block text-xs font-bold text-gray-600 mb-1 uppercase tracking-wider">
+      {label} {required && <span className="text-red-500">*</span>}
     </label>
     <input
       type={type}
@@ -94,21 +53,7 @@ const FormField = ({
       onChange={onChange}
       required={required}
       placeholder={placeholder}
-      style={{
-        width: "100%",
-        padding: "10px 14px",
-        border: "1px solid #e2e8f0",
-        borderRadius: "10px",
-        fontSize: "14px",
-        fontWeight: 500,
-        fontFamily: "'Inter', sans-serif",
-        outline: "none",
-        transition: "border-color 0.2s",
-        color: "#1e293b",
-        background: "white",
-      }}
-      onFocus={(e) => (e.target.style.borderColor = "#f97316")}
-      onBlur={(e) => (e.target.style.borderColor = "#e2e8f0")}
+      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm font-medium text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-orange-300 focus:border-orange-500"
     />
   </div>
 );
@@ -239,189 +184,69 @@ export default function MonComptePage() {
   const contentWidth = "760px";
 
   return (
-    <div
-      style={{
-        fontFamily: "'Inter', sans-serif",
-        minHeight: "100vh",
-        padding: "22px 16px 34px",
-        maxWidth: contentWidth,
-        margin: "0 auto",
-        background: "#f3f4f6",
-      }}
-    >
+    <div className="p-4 px-6 max-w-[1600px] mx-auto min-h-screen bg-gray-50/30">
       {/* Back button */}
       <button
         onClick={() => router.back()}
-        style={{
-          display: "inline-flex",
-          alignItems: "center",
-          gap: "6px",
-          background: "none",
-          border: "none",
-          cursor: "pointer",
-          color: "#64748b",
-          fontSize: "13px",
-          fontWeight: 600,
-          marginBottom: "12px",
-          padding: "6px 0",
-        }}
+        className="inline-flex items-center gap-2 text-gray-500 hover:text-gray-700 text-xs font-bold mb-4 transition-colors"
       >
-        <FiArrowLeft style={{ fontSize: "14px" }} />
+        <FiArrowLeft size={14} />
         Retour
       </button>
 
-      {/* Success / Error message */}
+      {/* Success / Error toast (harmonisé) */}
       {saveMessage && (
-        <div
-          style={{
-            padding: "12px 16px",
-            borderRadius: "12px",
-            marginBottom: "16px",
-            display: "flex",
-            alignItems: "center",
-            gap: "8px",
-            fontSize: "13px",
-            fontWeight: 600,
-            background: saveMessage.type === "success" ? "#dcfce7" : "#fef2f2",
-            color: saveMessage.type === "success" ? "#16a34a" : "#dc2626",
-            border: `1px solid ${saveMessage.type === "success" ? "#bbf7d0" : "#fecaca"}`,
-          }}
-        >
-          {saveMessage.type === "success" ? <FiCheckCircle /> : <FiX />}
-          {saveMessage.text}
+        <div className="fixed top-6 right-6 z-[100] animate-slide-in-right flex items-center gap-3 rounded-xl bg-emerald-50 border border-emerald-200 px-5 py-3.5 shadow-lg shadow-emerald-100/50">
+          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-500">
+            <FiCheckCircle className="text-white" size={16} />
+          </div>
+          <span className="text-sm font-bold text-emerald-800">
+            {saveMessage.text}
+          </span>
+          <button
+            onClick={() => setSaveMessage(null)}
+            className="ml-2 text-emerald-400 hover:text-emerald-600 transition-colors"
+          >
+            <FiX size={16} />
+          </button>
         </div>
       )}
 
-      {/* Profile Header Card */}
-      <div
-        style={{
-          maxWidth: contentWidth,
-          margin: "0 auto 18px",
-          borderRadius: "22px",
-          overflow: "hidden",
-          boxShadow:
-            "0 12px 30px rgba(15,23,42,0.06), 0 0 0 1px rgba(148,163,184,0.10)",
-          background: "white",
-        }}
-      >
-        {/* Orange banner */}
-        <div
-          style={{
-            background:
-              "linear-gradient(135deg, #f97316 0%, #fb923c 45%, #fdba74 100%)",
-            padding: "24px 28px 54px",
-            position: "relative",
-          }}
-        >
-          <div
-            style={{
-              position: "absolute",
-              top: "50%",
-              left: "50%",
-              width: "300px",
-              height: "300px",
-              borderRadius: "50%",
-              background: "rgba(255,255,255,0.06)",
-              transform: "translate(-30%, -60%)",
-              pointerEvents: "none",
-            }}
-          />
-        </div>
+      {/* Profile Header Card - Professional Design */}
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 md:p-8 mb-6 max-w-2xl mx-auto">
+        <div className="flex items-start gap-6">
+          {/* Avatar */}
+          <div className="w-20 h-20 rounded-xl bg-gradient-to-br from-orange-500 to-orange-400 flex items-center justify-center text-white font-black text-3xl flex-shrink-0 shadow-md">
+            {initials}
+          </div>
 
-        {/* Avatar + Name area overlapping banner */}
-        <div
-          style={{
-            padding: "0 28px 22px",
-            marginTop: "-40px",
-            position: "relative",
-            zIndex: 1,
-          }}
-        >
-          <div
-            style={{
-              display: "flex",
-              alignItems: "flex-end",
-              gap: "18px",
-              marginBottom: "16px",
-              flexWrap: "wrap",
-            }}
-          >
-            <div
-              style={{
-                width: "84px",
-                height: "84px",
-                borderRadius: "50%",
-                background: "linear-gradient(135deg, #f97316, #fb923c)",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                color: "white",
-                fontWeight: 800,
-                fontSize: "40px",
-                border: "4px solid white",
-                boxShadow: "0 4px 16px rgba(249,115,22,0.3)",
-                flexShrink: 0,
-              }}
-            >
-              {initials}
-            </div>
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "10px",
-                marginBottom: "8px",
-                flexWrap: "wrap",
-              }}
-            >
-              <span
-                style={{
-                  fontSize: "15px",
-                  fontWeight: 700,
-                  color: "#1f2937",
-                  lineHeight: 1,
-                }}
-              >
-                {displayName}
-              </span>
+          {/* Profile Info */}
+          <div className="flex-1 pt-1">
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-3">
+              <div>
+                <h1 className="text-xl font-bold text-gray-900">
+                  {displayName}
+                </h1>
+                <p className="text-sm text-gray-500 mt-1">
+                  {roles.length > 0 ? roles.join(" • ") : "Utilisateur"}
+                </p>
+              </div>
 
-              <span
+              {/* Status Badge - Subtle */}
+              <div
+                className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-semibold"
                 style={{
-                  padding: "5px 14px",
-                  borderRadius: "999px",
-                  fontSize: "12px",
-                  fontWeight: 700,
                   background: statusColor.bg,
                   color: statusColor.text,
                   border: `1px solid ${statusColor.border}`,
-                  textTransform: "uppercase",
-                  letterSpacing: "0.5px",
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: "4px",
                 }}
               >
-                <FiCheckCircle style={{ fontSize: "11px" }} />
+                <div
+                  className="w-2 h-2 rounded-full"
+                  style={{ background: statusColor.text }}
+                />
                 {user?.status || "Actif"}
-              </span>
-
-              {roles.map((role, i) => (
-                <span
-                  key={i}
-                  style={{
-                    padding: "4px 12px",
-                    borderRadius: "999px",
-                    fontSize: "12px",
-                    fontWeight: 700,
-                    background: role === "admin" ? "#fff7ed" : "#f1f5f9",
-                    color: role === "admin" ? "#ea580c" : "#475569",
-                    border: `1px solid ${role === "admin" ? "#fed7aa" : "#e2e8f0"}`,
-                    textTransform: "uppercase",
-                  }}
-                >
-                  {role}
-                </span>
-              ))}
+              </div>
             </div>
           </div>
         </div>
@@ -430,27 +255,8 @@ export default function MonComptePage() {
       {/* ═══ VIEW MODE ═══ */}
       {!isEditing && (
         <>
-          <div
-            style={{
-              maxWidth: contentWidth,
-              margin: "0 auto 16px",
-              borderRadius: "18px",
-              background: "white",
-              boxShadow:
-                "0 8px 24px rgba(15,23,42,0.05), 0 0 0 1px rgba(148,163,184,0.10)",
-              padding: "18px 22px 8px",
-            }}
-          >
-            <p
-              style={{
-                fontSize: "11px",
-                fontWeight: 800,
-                color: "#94a3b8",
-                textTransform: "uppercase",
-                letterSpacing: "0.14em",
-                padding: "0 0 6px",
-              }}
-            >
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 mb-6 max-w-2xl mx-auto">
+            <p className="text-xs font-black text-gray-400 uppercase tracking-widest mb-4 pb-2 border-b border-gray-100">
               Informations du compte
             </p>
 
@@ -487,92 +293,33 @@ export default function MonComptePage() {
           </div>
 
           {isAdmin && (
-            <button
-              onClick={() => setIsEditing(true)}
-              style={{
-                width: "100%",
-                maxWidth: "720px",
-                margin: "0 auto",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                gap: "8px",
-                height: "56px",
-                padding: "0 14px",
-                borderRadius: "14px",
-                border: "none",
-                background: "linear-gradient(135deg, #f97316, #fb923c)",
-                color: "white",
-                fontWeight: 700,
-                fontSize: "15px",
-                cursor: "pointer",
-                boxShadow: "0 4px 14px rgba(249,115,22,0.3)",
-                transition: "transform 0.15s, box-shadow 0.15s",
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.transform = "translateY(-1px)";
-                e.currentTarget.style.boxShadow =
-                  "0 6px 20px rgba(249,115,22,0.35)";
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.transform = "translateY(0)";
-                e.currentTarget.style.boxShadow =
-                  "0 4px 14px rgba(249,115,22,0.3)";
-              }}
-            >
-              <FiEdit2 style={{ fontSize: "16px" }} />
-              Modifier le profil
-            </button>
+            <div className="max-w-2xl mx-auto">
+              <button
+                onClick={() => setIsEditing(true)}
+                className="w-full flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-orange-500 hover:bg-orange-600 text-white font-bold text-sm transition-all shadow-md hover:shadow-lg"
+              >
+                <FiEdit2 size={16} />
+                Modifier le profil
+              </button>
+            </div>
           )}
         </>
       )}
 
       {/* ═══ EDIT MODE ═══ */}
       {isEditing && (
-        <form onSubmit={handleSubmit}>
-          <div
-            style={{
-              maxWidth: contentWidth,
-              margin: "0 auto 20px",
-              borderRadius: "18px",
-              background: "white",
-              boxShadow:
-                "0 8px 24px rgba(15,23,42,0.05), 0 0 0 1px rgba(148,163,184,0.10)",
-              padding: "18px 22px",
-            }}
-          >
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                marginBottom: "18px",
-              }}
-            >
-              <p
-                style={{
-                  fontSize: "11px",
-                  fontWeight: 700,
-                  color: "#f97316",
-                  textTransform: "uppercase",
-                  letterSpacing: "0.8px",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "6px",
-                }}
-              >
-                <FiEdit2 style={{ fontSize: "12px" }} />
+        <form onSubmit={handleSubmit} className="max-w-2xl mx-auto">
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 mb-6">
+            <div className="flex items-center gap-2 mb-6 pb-4 border-b border-gray-100">
+              <div className="w-5 h-5 rounded-lg bg-orange-100 flex items-center justify-center">
+                <FiEdit2 size={14} className="text-orange-600" />
+              </div>
+              <p className="text-xs font-bold text-orange-600 uppercase tracking-wider">
                 Modifier les informations
               </p>
             </div>
 
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-                gap: "0 16px",
-              }}
-            >
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
               <FormField
                 label="Prénom"
                 name="first_name"
@@ -600,13 +347,7 @@ export default function MonComptePage() {
               placeholder="Identifiant unique"
             />
 
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-                gap: "0 16px",
-              }}
-            >
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
               <FormField
                 label="Email"
                 name="email"
@@ -625,13 +366,7 @@ export default function MonComptePage() {
               />
             </div>
 
-            <div
-              style={{
-                borderTop: "1px solid #f1f5f9",
-                paddingTop: "16px",
-                marginTop: "4px",
-              }}
-            >
+            <div className="border-t border-gray-100 pt-6">
               <FormField
                 label="Nouveau mot de passe"
                 name="password"
@@ -640,14 +375,7 @@ export default function MonComptePage() {
                 type="password"
                 placeholder="Laisser vide pour ne pas changer"
               />
-              <p
-                style={{
-                  fontSize: "11px",
-                  color: "#94a3b8",
-                  marginTop: "-10px",
-                  fontWeight: 500,
-                }}
-              >
+              <p className="text-xs text-gray-400 mt-1 font-medium">
                 Laissez ce champ vide si vous ne souhaitez pas changer le mot de
                 passe
               </p>
@@ -655,81 +383,37 @@ export default function MonComptePage() {
           </div>
 
           {/* Action Buttons */}
-          <div
-            style={{
-              display: "flex",
-              gap: "12px",
-              maxWidth: contentWidth,
-              margin: "0 auto",
-            }}
-          >
+          <div className="flex gap-3">
             <button
               type="button"
               onClick={handleCancel}
-              style={{
-                flex: 1,
-                padding: "14px",
-                borderRadius: "14px",
-                border: "1px solid #e2e8f0",
-                background: "white",
-                color: "#475569",
-                fontWeight: 700,
-                fontSize: "14px",
-                cursor: "pointer",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                gap: "6px",
-              }}
+              className="flex-1 px-4 py-2.5 rounded-xl border border-gray-200 bg-white text-gray-700 font-bold text-sm flex items-center justify-center gap-2 hover:bg-gray-50 transition-colors"
             >
-              <FiX style={{ fontSize: "16px" }} />
+              <FiX size={16} />
               Annuler
             </button>
             <button
               type="submit"
               disabled={saving}
-              style={{
-                flex: 1,
-                padding: "14px",
-                borderRadius: "14px",
-                border: "none",
-                background: saving
-                  ? "#94a3b8"
-                  : "linear-gradient(135deg, #f97316, #fb923c)",
-                color: "white",
-                fontWeight: 700,
-                fontSize: "14px",
-                cursor: saving ? "not-allowed" : "pointer",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                gap: "6px",
-                boxShadow: saving ? "none" : "0 4px 14px rgba(249,115,22,0.3)",
-              }}
+              className={`flex-1 px-4 py-2.5 rounded-xl font-bold text-sm flex items-center justify-center gap-2 text-white transition-all ${
+                saving
+                  ? "bg-gray-400 cursor-not-allowed"
+                  : "bg-gradient-to-r from-orange-500 to-orange-400 hover:shadow-lg shadow-md"
+              }`}
             >
               {saving ? (
                 <>
-                  <div
-                    style={{
-                      width: "16px",
-                      height: "16px",
-                      border: "2px solid white",
-                      borderTopColor: "transparent",
-                      borderRadius: "50%",
-                      animation: "spin 0.8s linear infinite",
-                    }}
-                  />
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
                   Enregistrement...
                 </>
               ) : (
                 <>
-                  <FiSave style={{ fontSize: "16px" }} />
+                  <FiSave size={16} />
                   Enregistrer
                 </>
               )}
             </button>
           </div>
-          <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
         </form>
       )}
     </div>

@@ -5,10 +5,8 @@ import { FiX, FiCheck } from 'react-icons/fi';
 
 const ROLES_OPTIONS = [
     { id: 'admin', label: 'Admin', color: 'bg-red-50 text-red-600 border-red-100', description: 'Accès total' },
-    { id: 'arrets', label: 'Suivi Arrêts', color: 'bg-yellow-50 text-yellow-600 border-yellow-100', description: 'Page Arrêts' },
-    { id: 'portes', label: 'Suivi Portes', color: 'bg-blue-50 text-blue-600 border-blue-100', description: 'Page Portes' },
-    { id: 'carburant', label: 'Suivi Carburant', color: 'bg-green-50 text-green-600 border-green-100', description: 'Page Carburant' },
-    { id: 'poi', label: 'Gestion POI', color: 'bg-purple-50 text-purple-600 border-purple-100', description: 'Page POI' },
+    { id: 'carburant', label: 'Suivi Carburant', color: 'bg-green-50 text-green-600 border-green-100', description: 'POI · Carburant · Appels · Notifications' },
+    { id: 'gps', label: 'Suivi GPS', color: 'bg-teal-50 text-teal-600 border-teal-100', description: 'Camions · Suivi Arrêt · Ouverture Porte · POI · Notifications' },
 ];
 
 const buildUserFormData = (data = null) => ({

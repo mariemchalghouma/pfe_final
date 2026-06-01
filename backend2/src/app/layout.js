@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata = {
-  title: "Voyage Tracking",
+  title: "Travel Tracking",
   description: "Suivi intelligent de votre flotte de camions",
 };
 
@@ -25,9 +25,7 @@ export default function RootLayout({ children }) {
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
         <AuthProvider>
-          <MapProvider>
-            {children}
-          </MapProvider>
+          <MapProvider>{children}</MapProvider>
         </AuthProvider>
       </body>
     </html>

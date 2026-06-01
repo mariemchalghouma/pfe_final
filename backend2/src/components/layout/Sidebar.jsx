@@ -146,7 +146,7 @@ const Sidebar = () => {
             <div className={`flex items-center ${isCollapsed ? 'justify-center' : 'justify-between'} px-5 py-6 min-h-[88px]`}>
                 {!isCollapsed && (
                     <div className="flex items-baseline gap-2 min-w-0">
-                        <span className="text-[23px] font-black text-white leading-none tracking-[-0.02em]">VOYAGE</span>
+                        <span className="text-[23px] font-black text-white leading-none tracking-[-0.02em]">TRAVEL</span>
                         <span className="text-[14px] font-bold text-orange-400 leading-none tracking-wide">TRACKING</span>
                     </div>
                 )}

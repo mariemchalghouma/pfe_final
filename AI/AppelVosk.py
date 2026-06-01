@@ -81,7 +81,7 @@ BT_FORCE_RETRIES    = 5
 
 
 DB_HOST = "localhost"; DB_PORT = 5432
-DB_NAME = "tracking"; DB_USER = "postgres"; DB_PASSWORD = "12345"
+DB_NAME = "tracking"; DB_USER = "postgres"; DB_PASSWORD = "123456789"
 
 
 SYSTEM_PROMPT = """أنت مساعد هاتفي آلي لشركة نقل تونسية. تتكلم بالدارجة التونسية فقط.

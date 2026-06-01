@@ -9,6 +9,8 @@ import {
   FiUsers,
   FiShield,
   FiUserCheck,
+  FiCheckCircle,
+  FiX,
 } from "react-icons/fi";
 import { userAPI } from "@/services/api";
 import UserModal from "@/components/UserModal";
@@ -131,8 +133,19 @@ const Administration = () => {
   return (
     <div className="p-4 px-6 max-w-[1600px] mx-auto min-h-screen bg-gray-50/30">
       {successMessage && (
-        <div className="mb-4 rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm font-semibold text-green-700">
-          {successMessage}
+        <div className="fixed top-6 right-6 z-[100] animate-slide-in-right flex items-center gap-3 rounded-xl bg-emerald-50 border border-emerald-200 px-5 py-3.5 shadow-lg shadow-emerald-100/50">
+          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-500">
+            <FiCheckCircle className="text-white" size={16} />
+          </div>
+          <span className="text-sm font-bold text-emerald-800">
+            {successMessage}
+          </span>
+          <button
+            onClick={() => setSuccessMessage("")}
+            className="ml-2 text-emerald-400 hover:text-emerald-600 transition-colors"
+          >
+            <FiX size={16} />
+          </button>
         </div>
       )}
 

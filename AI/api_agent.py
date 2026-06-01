@@ -134,7 +134,7 @@ DB_CONFIG = {
     "port":     5432,
     "database": "tracking",
     "user":     "postgres",
-    "password": "12345",
+    "password": "123456789",
 }
 POLL_INTERVAL_S = 30  # Polling BDD toutes les 30s
 

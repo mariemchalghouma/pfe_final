@@ -1,7 +1,6 @@
 export const ROLE_TO_PATHS = {
   admin: [
     "/dashboard",
-    "/temps-reel",
     "/camions",
     "/suivi-arret",
     "/ouverture-porte",
@@ -13,19 +12,23 @@ export const ROLE_TO_PATHS = {
     "/appels",
     "/reclamations",
   ],
-  poi: ["/gestion-poi", "/camions", "/temps-reel", "/notifications"],
-  arrets: ["/suivi-arret", "/camions", "/temps-reel", "/notifications"],
-  portes: ["/ouverture-porte", "/camions", "/temps-reel", "/notifications"],
-  carburant: ["/carburant", "/camions", "/temps-reel", "/notifications"],
+  carburant: ["/gestion-poi", "/carburant", "/appels", "/notifications"],
+  gps: [
+    "/camions",
+    "/suivi-arret",
+    "/ouverture-porte",
+    "/gestion-poi",
+    "/appels",
+    "/notifications",
+  ],
 };
 
 export const DEFAULT_ROLE_PATH_PRIORITY = [
-  "/temps-reel",
-  "/gestion-poi",
+  "/camions",
   "/suivi-arret",
+  "/gestion-poi",
   "/ouverture-porte",
   "/carburant",
-  "/camions",
   "/dashboard",
   "/administration",
   "/parametres",

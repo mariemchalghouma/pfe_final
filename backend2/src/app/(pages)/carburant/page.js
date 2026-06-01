@@ -11,6 +11,7 @@ import {
   FiTruck,
   FiUser,
   FiCheck,
+  FiCheckCircle,
   FiX,
   FiDroplet,
   FiChevronDown,
@@ -358,11 +359,17 @@ function KPIChartCard({
             <Icon className="text-lg" />
           </div>
           <div className="min-w-0 flex-1">
-            <h3 className="truncate text-[11px] font-bold uppercase tracking-wider text-gray-500" title={title}>
+            <h3
+              className="truncate text-[11px] font-bold uppercase tracking-wider text-gray-500"
+              title={title}
+            >
               {title}
             </h3>
             {subtitle && (
-              <p className="truncate mt-0.5 text-[10px] text-gray-400" title={subtitle}>
+              <p
+                className="truncate mt-0.5 text-[10px] text-gray-400"
+                title={subtitle}
+              >
                 {subtitle}
               </p>
             )}
@@ -379,15 +386,17 @@ function KPIChartCard({
       <div className="mt-1 mb-2">
         <p className={`text-3xl font-black leading-none ${valueColor}`}>
           {value}
-          {unit && <span className="ml-1 text-sm font-semibold text-gray-400">{unit}</span>}
+          {unit && (
+            <span className="ml-1 text-sm font-semibold text-gray-400">
+              {unit}
+            </span>
+          )}
         </p>
       </div>
 
       {/* Chart */}
       {series && series.length > 0 && (
-        <div className="mt-auto h-12 w-full pt-2">
-          {renderChart()}
-        </div>
+        <div className="mt-auto h-12 w-full pt-2">{renderChart()}</div>
       )}
     </div>
   );
@@ -950,6 +959,7 @@ export default function CarburantPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [selectedRow, setSelectedRow] = useState(null);
   const [actionLoading, setActionLoading] = useState(false);
+  const [successMessage, setSuccessMessage] = useState("");
 
   // Charger les données pour Ravitaillement
   const loadDataRavitaillement = useCallback(async (nextFilters) => {
@@ -1093,7 +1103,9 @@ export default function CarburantPage() {
     try {
       setActionLoading(true);
       const nomUtilisateur = user
-        ? `${user.first_name || user.name || ""} ${user.last_name || ""}`.trim() || user.identifiant || ""
+        ? `${user.first_name || user.name || ""} ${user.last_name || ""}`.trim() ||
+          user.identifiant ||
+          ""
         : "";
       const result = await carburantAPI.submitReclamation({
         ...reclamationData,
@@ -1111,6 +1123,8 @@ export default function CarburantPage() {
         }));
         setModalOpen(false);
         setSelectedRow(null);
+        setSuccessMessage("Réclamation envoyée avec succès !");
+        setTimeout(() => setSuccessMessage(""), 4000);
       }
     } catch (err) {
       alert("Erreur lors de l'enregistrement de la réclamation");
@@ -1246,6 +1260,24 @@ export default function CarburantPage() {
 
   return (
     <section className="min-h-full bg-[#f3f4f6] p-6 text-sm text-gray-700">
+      {/* ── Toast succès réclamation ── */}
+      {successMessage && (
+        <div className="fixed top-6 right-6 z-[100] animate-slide-in-right flex items-center gap-3 rounded-xl bg-emerald-50 border border-emerald-200 px-5 py-3.5 shadow-lg shadow-emerald-100/50">
+          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-500">
+            <FiCheckCircle className="text-white" size={16} />
+          </div>
+          <span className="text-sm font-bold text-emerald-800">
+            {successMessage}
+          </span>
+          <button
+            onClick={() => setSuccessMessage("")}
+            className="ml-2 text-emerald-400 hover:text-emerald-600 transition-colors"
+          >
+            <FiX size={16} />
+          </button>
+        </div>
+      )}
+
       <div className="mx-auto max-w-[1500px] space-y-6">
         {/* ── BLOC 1 : Statistiques ── */}
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
